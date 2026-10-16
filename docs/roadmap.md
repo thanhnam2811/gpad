@@ -36,15 +36,15 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Integrate winner into `internal/fileio` with robust error and unmap safety.
 - [x] Verification by `[Agent-4]` and Phase 2 Git Commit.
 
-### Phase 3: Bottleneck #2 — Zero-Prompt Instant Draft Save (`internal/session`)
-- [ ] Implement benchmark suite for 512KB and 5MB payloads across:
+### Phase 3: Bottleneck #2 — Zero-Prompt Instant Draft Save (`internal/session`) [COMPLETED]
+- [x] Implement benchmark suite for 512KB and 5MB payloads across:
   * Candidate A: Temp-file atomic rename (`os.Rename`).
   * Candidate B: Append-only Binary WAL with pre-allocated memory mapping.
   * Candidate C: Pure-Go SQLite in WAL mode (`PRAGMA synchronous=NORMAL;`).
-- [ ] Execute `go test -bench=. -benchmem -count=5` on NVMe/SSD host drive.
-- [ ] Target: UI thread block latency < 0.5ms.
-- [ ] Document ADR `[PERF-002]` in `docs/perf-decisions.md`.
-- [ ] Verification of crash recovery by `[Agent-4]` and Phase 3 Git Commit.
+- [x] Execute `go test -bench=. -benchmem -count=5` on NVMe/SSD host drive.
+- [x] Target: UI thread block latency < 0.5ms (Achieved < 5µs via async buffered flusher).
+- [x] Document ADR `[PERF-002]` in `docs/perf-decisions.md`.
+- [x] Verification of crash recovery by `[Agent-4]` and Phase 3 Git Commit.
 
 ### Phase 4: Bottleneck #3 — Adaptive Search & Replace (`internal/search`)
 - [ ] Implement benchmark suite on 10MB text buffer across:
