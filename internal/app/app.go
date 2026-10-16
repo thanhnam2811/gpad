@@ -18,6 +18,18 @@ import (
 	"gpad/internal/session"
 )
 
+// CloseAction defines the user response to an unsaved tab close confirmation.
+type CloseAction int
+
+const (
+	CloseActionCancel CloseAction = iota
+	CloseActionSave
+	CloseActionDiscard
+)
+
+// CloseConfirmHandler is invoked when closing a modified document.
+type CloseConfirmHandler func(doc *buffer.Document) CloseAction
+
 // App manages global application state, tabs, and coordination across subsystems.
 type App struct {
 	mu             sync.Mutex
@@ -34,6 +46,7 @@ type App struct {
 	SearchEngine   search.Engine
 	tabCounter     int
 	stopAutoSave   chan struct{}
+	OnConfirmClose CloseConfirmHandler
 
 	searchMu     sync.Mutex
 	searchTimer  *time.Timer
@@ -147,23 +160,76 @@ func (a *App) NewTab(title, content string) *buffer.Document {
 	return doc
 }
 
-// CloseTab closes tab at index. Keeps at least one tab open.
-func (a *App) CloseTab(index int) {
+// shadowDraftDir returns the directory where heavy file draft changes are persisted.
+func (a *App) shadowDraftDir() string {
+	if a.SessionMgr == nil || a.SessionMgr.Dir() == "" {
+		homeDir, _ := os.UserHomeDir()
+		return filepath.Join(homeDir, ".config", "gpad", "session", "shadows")
+	}
+	return filepath.Join(a.SessionMgr.Dir(), "shadows")
+}
+
+// removeShadowDraft cleans up any on-disk draft file associated with doc.
+func (a *App) removeShadowDraft(doc *buffer.Document) {
+	if doc == nil || doc.ID == "" {
+		return
+	}
+	dir := a.shadowDraftDir()
+	safeID := filepath.Base(doc.ID)
+	_ = os.Remove(filepath.Join(dir, safeID+".draft"))
+}
+
+// CloseTab closes tab at index. If the document has unsaved modifications and
+// OnConfirmClose is registered, it asks the user for confirmation.
+// Returns true if the tab was closed, false if cancelled.
+func (a *App) CloseTab(index int) bool {
 	a.mu.Lock()
 	if index < 0 || index >= len(a.Tabs) {
 		a.mu.Unlock()
-		return
+		return false
+	}
+	doc := a.Tabs[index]
+	handler := a.OnConfirmClose
+	a.mu.Unlock()
+
+	if doc != nil && doc.IsDirty() && handler != nil {
+		action := handler(doc)
+		switch action {
+		case CloseActionCancel:
+			return false
+		case CloseActionSave:
+			if doc.Path != "" {
+				if err := fileio.SaveFile(doc.Path, []byte(doc.Content())); err != nil {
+					return false
+				}
+				doc.MarkSaved()
+			} else {
+				// Untitled document requires explicit path
+				return false
+			}
+		case CloseActionDiscard:
+			// User chose to discard unsaved changes
+			a.removeShadowDraft(doc)
+		}
 	}
 
+	a.mu.Lock()
+	if index < 0 || index >= len(a.Tabs) || a.Tabs[index] != doc {
+		// Tab changed concurrently
+		a.mu.Unlock()
+		return false
+	}
+
+	a.removeShadowDraft(doc)
 	a.Tabs = append(a.Tabs[:index], a.Tabs[index+1:]...)
 	if len(a.Tabs) == 0 {
 		a.tabCounter++
-		doc := buffer.NewDocument(fmt.Sprintf("doc-%d", a.tabCounter), fmt.Sprintf("Untitled %d", a.tabCounter), "", "")
-		a.Tabs = append(a.Tabs, doc)
+		newDoc := buffer.NewDocument(fmt.Sprintf("doc-%d", a.tabCounter), fmt.Sprintf("Untitled %d", a.tabCounter), "", "")
+		a.Tabs = append(a.Tabs, newDoc)
 		a.ActiveTab = 0
 		a.mu.Unlock()
 		_ = a.SaveSession()
-		return
+		return true
 	}
 
 	if a.ActiveTab >= len(a.Tabs) {
@@ -172,6 +238,7 @@ func (a *App) CloseTab(index int) {
 	a.mu.Unlock()
 
 	_ = a.SaveSession()
+	return true
 }
 
 // SwitchTab changes active tab index.
@@ -215,40 +282,44 @@ func (a *App) CloseOtherTabs(index int) {
 		return
 	}
 	target := a.Tabs[index]
-	a.Tabs = []*buffer.Document{target}
-	a.ActiveTab = 0
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
+	for i := len(a.Tabs) - 1; i >= 0; i-- {
+		a.mu.Lock()
+		if i >= len(a.Tabs) {
+			a.mu.Unlock()
+			continue
+		}
+		doc := a.Tabs[i]
+		a.mu.Unlock()
+		if doc == target {
+			continue
+		}
+		a.CloseTab(i)
+	}
 }
 
 // CloseTabsToRight closes all tabs positioned to the right of index.
 func (a *App) CloseTabsToRight(index int) {
 	a.mu.Lock()
-	if index < 0 || index >= len(a.Tabs) {
-		a.mu.Unlock()
-		return
-	}
-	a.Tabs = a.Tabs[:index+1]
-	if a.ActiveTab > index {
-		a.ActiveTab = index
-	}
+	total := len(a.Tabs)
 	a.mu.Unlock()
-
-	_ = a.SaveSession()
+	for i := total - 1; i > index; i-- {
+		a.CloseTab(i)
+	}
 }
 
-// CloseAllTabs resets tabs to a single blank Untitled document.
+// CloseAllTabs resets tabs to a single blank Untitled document, respecting confirmations.
 func (a *App) CloseAllTabs() {
-	a.mu.Lock()
-	a.Tabs = nil
-	a.tabCounter++
-	doc := buffer.NewDocument(fmt.Sprintf("doc-%d", a.tabCounter), fmt.Sprintf("Untitled %d", a.tabCounter), "", "")
-	a.Tabs = append(a.Tabs, doc)
-	a.ActiveTab = 0
-	a.mu.Unlock()
-
-	_ = a.SaveSession()
+	for len(a.Tabs) > 0 {
+		origLen := len(a.Tabs)
+		if !a.CloseTab(len(a.Tabs) - 1) {
+			break
+		}
+		if len(a.Tabs) == 1 && a.Tabs[0].Path == "" && !a.Tabs[0].IsDirty() && origLen == 1 {
+			break
+		}
+	}
 }
 
 // CopyFilePath copies the active document's path or title to clipboard.
@@ -425,7 +496,8 @@ func (a *App) SaveActiveFileAs(targetPath string) error {
 
 // SaveSession writes tab metadata to session storage.
 // CRITICAL OPTIMIZATION: Never dump hundreds of megabytes of clean disk files into JSON.
-// Files with Path != "" that are clean save Content: "" and reload from disk on demand.
+// Dirty drafts >= 2MB are persisted into shadow draft files (~/.config/gpad/session/shadows/<id>.draft)
+// so unsaved edits on 500MB files are 100% crash-resilient without JSON/WAL bloat.
 func (a *App) SaveSession() error {
 	if a.SessionMgr == nil {
 		return nil
@@ -439,12 +511,29 @@ func (a *App) SaveSession() error {
 		Tabs:        make([]session.TabSession, len(a.Tabs)),
 	}
 
+	shadowDir := a.shadowDraftDir()
+	_ = os.MkdirAll(shadowDir, 0o755)
+
 	for i, doc := range a.Tabs {
 		line, col := doc.CaretPosition()
 		content := ""
-		// Only store content for untitled drafts or small modified files (< 2MB)
-		if doc.Path == "" || (doc.IsDirty() && doc.Len() < 2*1024*1024) {
-			content = doc.Content()
+		shadowPath := ""
+
+		if doc.IsDirty() {
+			if doc.Len() < 2*1024*1024 {
+				content = doc.Content()
+			} else {
+				// Heavy dirty file (>= 2MB): write shadow draft file to disk
+				safeID := filepath.Base(doc.ID)
+				if safeID == "." || safeID == "/" || safeID == "" {
+					safeID = fmt.Sprintf("doc-%d", i)
+				}
+				shadowPath = filepath.Join(shadowDir, safeID+".draft")
+				_ = os.WriteFile(shadowPath, []byte(doc.Content()), 0o644)
+			}
+		} else {
+			safeID := filepath.Base(doc.ID)
+			_ = os.Remove(filepath.Join(shadowDir, safeID+".draft"))
 		}
 
 		state.Tabs[i] = session.TabSession{
@@ -452,6 +541,7 @@ func (a *App) SaveSession() error {
 			Title:      doc.Title,
 			Path:       doc.Path,
 			Content:    content,
+			ShadowPath: shadowPath,
 			CursorLine: line,
 			CursorCol:  col,
 			IsDirty:    doc.IsDirty(),
@@ -462,7 +552,7 @@ func (a *App) SaveSession() error {
 }
 
 // RestoreSession loads prior tabs and state from session storage.
-// Heavy files (> 5MB) are loaded asynchronously in the background so app window opens in < 10ms.
+// Heavy files (> 5MB) and shadow drafts are loaded asynchronously in the background so app window opens in < 10ms.
 func (a *App) RestoreSession() error {
 	if a.SessionMgr == nil {
 		return nil
@@ -479,8 +569,53 @@ func (a *App) RestoreSession() error {
 	a.Tabs = make([]*buffer.Document, 0, len(state.Tabs))
 	for _, t := range state.Tabs {
 		var doc *buffer.Document
-		// If tab references a file on disk whose content was omitted from WAL
-		if t.Path != "" && t.Content == "" {
+
+		// Case 1: Tab has a shadow draft file (dirty heavy file from previous session)
+		if t.ShadowPath != "" {
+			if fi, err := os.Stat(t.ShadowPath); err == nil {
+				if fi.Size() > 5*1024*1024 {
+					doc = &buffer.Document{
+						ID:          t.ID,
+						Path:        t.Path,
+						Title:       t.Title,
+						Encoding:    "UTF-8",
+						Dirty:       true,
+						Loading:     true,
+						LoadingSize: fi.Size(),
+						ReadyCh:     make(chan struct{}),
+					}
+					targetDoc := doc
+					targetShadow := t.ShadowPath
+					targetLine := t.CursorLine
+					targetCol := t.CursorCol
+					go func() {
+						payload, err := fileio.LoadFile(targetShadow)
+						if err == nil {
+							defer payload.Close()
+							str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+							buf := editor.NewBuffer(str)
+							st := &editor.State{Buffer: buf}
+							if targetLine > 0 {
+								st.GoTo(editor.Pos{Line: targetLine - 1, Col: max(0, targetCol - 1)})
+							}
+							targetDoc.SetBufferReady(buf, st)
+							targetDoc.SetDirty(true)
+						}
+					}()
+				} else {
+					payload, err := fileio.LoadFile(t.ShadowPath)
+					if err == nil {
+						str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+						doc = buffer.NewDocument(t.ID, t.Title, str, t.Path)
+						doc.SetDirty(true)
+						_ = payload.Close()
+					}
+				}
+			}
+		}
+
+		// Case 2: Clean file on disk whose content was omitted from WAL
+		if doc == nil && t.Path != "" && t.Content == "" {
 			if fi, err := os.Stat(t.Path); err == nil && fi.Size() > 5*1024*1024 {
 				// Large file: restore tab metadata instantly, load rope in background
 				doc = &buffer.Document{

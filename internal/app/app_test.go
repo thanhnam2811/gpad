@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"gpad/internal/buffer"
 	"gpad/internal/search"
 	"gpad/internal/session"
 )
@@ -265,4 +266,160 @@ func TestAppSaveActiveFileAs(t *testing.T) {
 		t.Fatalf("expected content %q, got %q", "Hello SaveAs", string(readBytes))
 	}
 }
+
+func TestAppCloseTabConfirmation(t *testing.T) {
+	app := NewAppWithSessionDir(t.TempDir())
+	defer app.Stop()
+
+	tmpFile := filepath.Join(t.TempDir(), "dirty_test.txt")
+	if err := os.WriteFile(tmpFile, []byte("original text"), 0o644); err != nil {
+		t.Fatalf("write tmpFile failed: %v", err)
+	}
+
+	if err := app.OpenFile(tmpFile); err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+
+	doc := app.ActiveDocument()
+	doc.Buffer.Edit(struct{ Start, End int; Text string }{Start: 0, End: 0, Text: "modified "})
+	doc.SetDirty(true)
+
+	// 1. Cancel action: tab should remain open
+	app.OnConfirmClose = func(d *buffer.Document) CloseAction {
+		return CloseActionCancel
+	}
+	closed := app.CloseTab(0)
+	if closed {
+		t.Fatalf("expected CloseTab to return false on Cancel")
+	}
+	if len(app.Tabs) != 1 {
+		t.Fatalf("expected tab to remain open on Cancel")
+	}
+
+	// 2. Save action: tab should save and close
+	app.OnConfirmClose = func(d *buffer.Document) CloseAction {
+		return CloseActionSave
+	}
+	closed = app.CloseTab(0)
+	if !closed {
+		t.Fatalf("expected CloseTab to return true on Save")
+	}
+	savedData, _ := os.ReadFile(tmpFile)
+	if string(savedData) != "modified original text" {
+		t.Fatalf("expected file to be saved on disk, got %q", string(savedData))
+	}
+
+	// 3. Discard action: tab should close without saving
+	tmpFile2 := filepath.Join(t.TempDir(), "discard_test.txt")
+	_ = os.WriteFile(tmpFile2, []byte("initial"), 0o644)
+	_ = app.OpenFile(tmpFile2)
+	doc2 := app.ActiveDocument()
+	doc2.Buffer.Edit(struct{ Start, End int; Text string }{Start: 0, End: 0, Text: "unsaved "})
+	doc2.SetDirty(true)
+
+	app.OnConfirmClose = func(d *buffer.Document) CloseAction {
+		return CloseActionDiscard
+	}
+	closed = app.CloseTab(0)
+	if !closed {
+		t.Fatalf("expected CloseTab to return true on Discard")
+	}
+	data2, _ := os.ReadFile(tmpFile2)
+	if string(data2) != "initial" {
+		t.Fatalf("expected file to retain original content on Discard, got %q", string(data2))
+	}
+}
+
+func TestAppHeavyFileShadowDraftPersistenceAndRecovery(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessDir := filepath.Join(tmpDir, "sess")
+	mgr1, err := session.NewManager(sessDir)
+	if err != nil {
+		t.Fatalf("session.NewManager error: %v", err)
+	}
+
+	// Create a 3MB file
+	filePath := filepath.Join(tmpDir, "heavy_doc.log")
+	initialData := bytes.Repeat([]byte("LINE OF DATA 1234567890\n"), 125000) // ~3MB
+	if err := os.WriteFile(filePath, initialData, 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	app1 := &App{
+		SessionMgr: mgr1,
+	}
+	if err := app1.OpenFile(filePath); err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+
+	doc1 := app1.Tabs[0]
+	// Make unsaved edits to the 3MB document
+	doc1.Buffer.Edit(struct{ Start, End int; Text string }{Start: 0, End: 0, Text: "CRITICAL UNSAVED DRAFT EDIT\n"})
+	doc1.SetDirty(true)
+
+	// Save session - must persist shadow draft without blowing up WAL
+	if err := app1.SaveSession(); err != nil {
+		t.Fatalf("SaveSession failed: %v", err)
+	}
+
+	// WAL must remain tiny
+	walInfo, err := os.Stat(filepath.Join(sessDir, "session.wal"))
+	if err != nil {
+		t.Fatalf("stat session.wal failed: %v", err)
+	}
+	if walInfo.Size() > 4096 {
+		t.Fatalf("WAL size bloated (%d bytes)! Expected < 4096", walInfo.Size())
+	}
+
+	// Shadow draft file must exist
+	shadows, err := os.ReadDir(filepath.Join(sessDir, "shadows"))
+	if err != nil || len(shadows) == 0 {
+		t.Fatalf("expected shadow draft file to be created, err=%v, count=%d", err, len(shadows))
+	}
+
+	_ = mgr1.Close()
+
+	// Reopen app in new instance and verify restoration of unsaved modifications!
+	mgr2, err := session.NewManager(sessDir)
+	if err != nil {
+		t.Fatalf("mgr2 NewManager failed: %v", err)
+	}
+	defer mgr2.Close()
+
+	app2 := &App{
+		SessionMgr: mgr2,
+	}
+	if err := app2.RestoreSession(); err != nil {
+		t.Fatalf("RestoreSession failed: %v", err)
+	}
+
+	if len(app2.Tabs) != 1 {
+		t.Fatalf("expected 1 restored tab, got %d", len(app2.Tabs))
+	}
+	restoredDoc := app2.Tabs[0]
+	if !restoredDoc.IsDirty() {
+		t.Fatalf("restored draft must be marked dirty")
+	}
+	if restoredDoc.Path != filePath {
+		t.Fatalf("expected doc.Path to be preserved as %q, got %q", filePath, restoredDoc.Path)
+	}
+
+	prefix := restoredDoc.Buffer.Slice(0, 30)
+	if !bytes.HasPrefix([]byte(prefix), []byte("CRITICAL UNSAVED DRAFT EDIT")) {
+		t.Fatalf("expected unsaved draft edits to be restored, got prefix: %q", prefix)
+	}
+
+	// Clean up by saving or closing tab
+	app2.OnConfirmClose = func(d *buffer.Document) CloseAction {
+		return CloseActionDiscard
+	}
+	app2.CloseTab(0)
+
+	// Verify shadow draft was deleted on close
+	shadowsRemaining, _ := os.ReadDir(filepath.Join(sessDir, "shadows"))
+	if len(shadowsRemaining) != 0 {
+		t.Fatalf("expected shadow drafts to be cleaned up on close, remaining: %d", len(shadowsRemaining))
+	}
+}
+
 

@@ -21,6 +21,7 @@ type TabSession struct {
 	Title      string `json:"title"`
 	Path       string `json:"path"`
 	Content    string `json:"content,omitempty"`
+	ShadowPath string `json:"shadow_path,omitempty"`
 	CursorLine int    `json:"cursor_line"`
 	CursorCol  int    `json:"cursor_col"`
 	IsDirty    bool   `json:"is_dirty"`
@@ -70,6 +71,14 @@ func NewManager(dir string) (*Manager, error) {
 	}
 
 	return m, nil
+}
+
+// Dir returns the directory path managed by this session manager.
+func (m *Manager) Dir() string {
+	if m == nil {
+		return ""
+	}
+	return m.dir
 }
 
 // SaveSnapshot writes the session snapshot directly to the WAL file with bounded size.

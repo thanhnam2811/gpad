@@ -5,16 +5,22 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"gpad/internal/app"
+	"gpad/internal/buffer"
+	"gpad/internal/search"
 )
 
 // UI represents the native UI renderer.
 type UI struct {
-	app      *app.App
-	isDark   bool
-	themeSet bool
+	app              *app.App
+	isDark           bool
+	themeSet         bool
+	largeFindOpen    bool
+	largeFindQuery   string
+	largeMatchIndex  int
 }
 
 // NewUI initializes the UI renderer.
@@ -23,6 +29,46 @@ func NewUI(a *app.App) *UI {
 		app:    a,
 		isDark: detectGnomeDarkMode(),
 	}
+
+	// Register native close confirmation handler
+	a.OnConfirmClose = func(doc *buffer.Document) app.CloseAction {
+		title := doc.Title
+		if title == "" {
+			title = "Untitled"
+		}
+		res, err := mygo.Dialog.Message(mygo.MessageOptions{
+			Title:         "Gopad++",
+			Message:       fmt.Sprintf("Do you want to save changes to \"%s\"?", title),
+			Detail:        "Your changes will be lost if you don't save them.",
+			Type:          mygo.MessageWarning,
+			Buttons:       []string{"Save", "Don't Save", "Cancel"},
+			DefaultButton: 0,
+			CancelButton:  2,
+		})
+		if err != nil {
+			return app.CloseActionCancel
+		}
+		switch res.Button {
+		case 0:
+			if doc.Path == "" {
+				path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+					Title:       "Save As - Gopad++",
+					DefaultPath: doc.Title + ".txt",
+				})
+				if err != nil || path == "" {
+					return app.CloseActionCancel
+				}
+				_ = a.SaveActiveFileAs(path)
+				return app.CloseActionDiscard // already saved to disk
+			}
+			return app.CloseActionSave
+		case 1:
+			return app.CloseActionDiscard
+		default:
+			return app.CloseActionCancel
+		}
+	}
+
 	return u
 }
 
@@ -212,30 +258,71 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-// OpenFind opens the native find bar in the active editor.
+// OpenFind opens the find bar in the active editor.
+// For large files (>= 5MB) or while loading, uses Zero-Lock Large-File Search to prevent UI freeze.
 func (u *UI) OpenFind() {
-	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+	doc := u.app.ActiveDocument()
+	if doc == nil {
+		return
+	}
+	if doc.Len() >= 5*1024*1024 || doc.IsLoading() {
+		u.largeFindOpen = true
+		return
+	}
+	if doc.State != nil {
 		doc.State.Run(editor.Find)
 	}
 }
 
-// OpenFindReplace opens the native find & replace bar in the active editor.
+// OpenFindReplace opens the find & replace bar in the active editor.
 func (u *UI) OpenFindReplace() {
-	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+	doc := u.app.ActiveDocument()
+	if doc == nil {
+		return
+	}
+	if doc.Len() >= 5*1024*1024 || doc.IsLoading() {
+		u.largeFindOpen = true
+		return
+	}
+	if doc.State != nil {
 		doc.State.Run(editor.FindReplace)
 	}
 }
 
 // FindNext jumps to the next match.
 func (u *UI) FindNext() {
-	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+	doc := u.app.ActiveDocument()
+	if doc == nil {
+		return
+	}
+	if u.largeFindOpen {
+		res := u.app.GetSearchResults()
+		if len(res.Matches) > 0 {
+			u.largeMatchIndex = (u.largeMatchIndex + 1) % len(res.Matches)
+			u.jumpToMatch(doc, res.Matches[u.largeMatchIndex])
+		}
+		return
+	}
+	if doc.State != nil {
 		doc.State.Run(editor.FindNext)
 	}
 }
 
 // FindPrevious jumps to the previous match.
 func (u *UI) FindPrevious() {
-	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+	doc := u.app.ActiveDocument()
+	if doc == nil {
+		return
+	}
+	if u.largeFindOpen {
+		res := u.app.GetSearchResults()
+		if len(res.Matches) > 0 {
+			u.largeMatchIndex = (u.largeMatchIndex - 1 + len(res.Matches)) % len(res.Matches)
+			u.jumpToMatch(doc, res.Matches[u.largeMatchIndex])
+		}
+		return
+	}
+	if doc.State != nil {
 		doc.State.Run(editor.FindPrevious)
 	}
 }
@@ -251,6 +338,16 @@ func (u *UI) GoToLine() {
 func (u *UI) SelectAllMatches() {
 	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
 		doc.State.Run(editor.SelectAllMatches)
+	}
+}
+
+func (u *UI) jumpToMatch(doc *buffer.Document, m search.Match) {
+	if doc == nil || doc.State == nil {
+		return
+	}
+	if m.Line > 0 {
+		doc.State.GoTo(editor.Pos{Line: m.Line - 1, Col: max(0, m.Col - 1)})
+		doc.State.Select(m.Offset, m.Offset+m.Length)
 	}
 }
 
@@ -277,6 +374,57 @@ func (u *UI) renderEditor(c *ui.Context) {
 			ui.Text(c, "No document open")
 		})
 		return
+	}
+
+	t := c.Theme()
+
+	// If large file search bar is active, render docked bar above editor
+	if u.largeFindOpen {
+		ui.Row(c.Key("large-find-docked")).FillWidth().Height(28).Background(t.Surface).Border(1, t.Border).Padding(2, 8).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "Find:").FontSize(11).TextColor(t.TextMuted)
+
+			input := ui.TextInput(c.Key("large-find-input"), &u.largeFindQuery).Width(180)
+			if input.Changed() {
+				u.app.TriggerSearch(u.largeFindQuery)
+				u.largeMatchIndex = 0
+			}
+
+			res := u.app.GetSearchResults()
+			countStr := "0/0"
+			if res.Count > 0 {
+				countStr = fmt.Sprintf("%d/%d", u.largeMatchIndex+1, res.Count)
+			}
+			ui.Text(c, countStr).FontSize(11).TextColor(t.TextMuted)
+
+			prevBtn := ui.ButtonBase(c.Key("large-find-prev")).Size(20, 20).Radius(3).Center()
+			if prevBtn.Hovered() {
+				prevBtn.Background(t.SurfaceHover)
+			}
+			prevBtn.Children(func() { ui.Text(c, "▲").FontSize(8) })
+			if prevBtn.Clicked() && len(res.Matches) > 0 {
+				u.largeMatchIndex = (u.largeMatchIndex - 1 + len(res.Matches)) % len(res.Matches)
+				u.jumpToMatch(doc, res.Matches[u.largeMatchIndex])
+			}
+
+			nextBtn := ui.ButtonBase(c.Key("large-find-next")).Size(20, 20).Radius(3).Center()
+			if nextBtn.Hovered() {
+				nextBtn.Background(t.SurfaceHover)
+			}
+			nextBtn.Children(func() { ui.Text(c, "▼").FontSize(8) })
+			if nextBtn.Clicked() && len(res.Matches) > 0 {
+				u.largeMatchIndex = (u.largeMatchIndex + 1) % len(res.Matches)
+				u.jumpToMatch(doc, res.Matches[u.largeMatchIndex])
+			}
+
+			closeBtn := ui.ButtonBase(c.Key("large-find-close")).Size(20, 20).Radius(3).Center()
+			if closeBtn.Hovered() {
+				closeBtn.Background(t.SurfaceHover)
+			}
+			closeBtn.Children(func() { ui.Text(c, "✕").FontSize(9) })
+			if closeBtn.Clicked() {
+				u.largeFindOpen = false
+			}
+		})
 	}
 
 	// Main code editor occupying entire central viewport

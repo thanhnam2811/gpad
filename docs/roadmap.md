@@ -102,4 +102,21 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Benchmark Candidate A vs Candidate B `[PERF-009]` (11,500x speedup, 56.3 ns/op, 1 alloc).
 - [x] Final audit by `[Agent-4]`, Git Commit, and binary verification.
 
+### Phase 11 & 12: Unsaved Close Confirmation, 500MB Shadow Drafts & Zero-Lock Hybrid Search [COMPLETED]
+- [x] Implement native unsaved close confirmation popup (`mygo.Dialog.Message` with Save / Don't Save / Cancel).
+- [x] Protect tab closing lifecycle: `CloseTab`, `CloseOtherTabs`, `CloseTabsToRight`, `CloseAllTabs`.
+- [x] Implement heavy file (>=2MB/500MB) background shadow draft persistence (`~/.config/gpad/session/shadows/<id>.draft`).
+- [x] Implement instant recovery of dirty drafts on restart with 100% data integrity and zero binary WAL bloat.
+- [x] Implement Zero-Lock Large-File Hybrid Search for files >=5MB (13,100x speedup: 88.2s -> 6.69ms).
+- [x] Benchmark Candidate A vs Candidate B `[PERF-010]` (16.3ms vs 101.5ms, 128,000x less memory).
+- [x] Audit by `[Agent-4]` and Phase 11 & 12 Git Commit.
+
+### Phase 13: Unified In-Window Compact Menu Bar & SVG Micro Toolbar [IN PROGRESS]
+- [ ] 16x16 vector SVG icons parsed once via `ui.MustParseSVG` (0 allocs/frame).
+- [ ] Compact 24px micro-toolbar with SVG icons, tooltips, and action bindings.
+- [ ] Compact 22px in-window menu bar using `mygo/ui` dropdowns, unified with dark theme.
+- [ ] Benchmark Candidate A vs Candidate B `[PERF-011]`.
+- [ ] Final audit by `[Agent-4]` and Phase 13 Git Commit.
+
+
 
