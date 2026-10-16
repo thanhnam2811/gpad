@@ -26,15 +26,15 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
   * `internal/ui`: High-density GNOME 46 native compact presentation layer.
 - [ ] Verification by `[Agent-4]` and Phase 1 Git Commit.
 
-### Phase 2: Bottleneck #1 — Ultra-Fast File Loader (`internal/fileio`)
-- [ ] Implement benchmark suite for 10KB, 1MB, 50MB across:
+### Phase 2: Bottleneck #1 — Ultra-Fast File Loader (`internal/fileio`) [COMPLETED]
+- [x] Implement benchmark suite for 10KB, 1MB, 50MB across:
   * Candidate A: `os.ReadFile` (standard buffer allocation).
   * Candidate B: `syscall.Mmap` (`PROT_READ`, `MAP_SHARED` zero-copy paging).
   * Candidate C: Chunked Reader (`bufio.Reader` with `sync.Pool`).
-- [ ] Execute `go test -bench=. -benchmem -count=5` on local host.
-- [ ] Document ADR `[PERF-001]` in `docs/perf-decisions.md`.
-- [ ] Integrate winner into `internal/fileio` with robust error and unmap safety.
-- [ ] Verification by `[Agent-4]` and Phase 2 Git Commit.
+- [x] Execute `go test -bench=. -benchmem -count=5` on local host.
+- [x] Document ADR `[PERF-001]` in `docs/perf-decisions.md`.
+- [x] Integrate winner into `internal/fileio` with robust error and unmap safety.
+- [x] Verification by `[Agent-4]` and Phase 2 Git Commit.
 
 ### Phase 3: Bottleneck #2 — Zero-Prompt Instant Draft Save (`internal/session`)
 - [ ] Implement benchmark suite for 512KB and 5MB payloads across:
