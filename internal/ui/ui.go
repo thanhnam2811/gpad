@@ -47,6 +47,9 @@ func (u *UI) Render(c *ui.Context) {
 		t = c.Theme()
 	}
 
+	// Proactively persist unsaved draft modifications to WAL
+	u.app.CheckAutoSave()
+
 	// Global keyboard shortcuts
 	if c.Shortcut(ui.Cmd, ui.KeyN) {
 		u.app.NewTab("", "")

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/egoist/mygo/ui/editor"
 	"gpad/internal/buffer"
 	"gpad/internal/fileio"
 	"gpad/internal/search"
@@ -26,6 +27,7 @@ type App struct {
 	SessionMgr     *session.Manager
 	SearchEngine   search.Engine
 	tabCounter     int
+	stopAutoSave   chan struct{}
 }
 
 // NewApp initializes a new application state with one default Untitled tab.
@@ -43,21 +45,68 @@ func NewApp() *App {
 		SessionMgr:   sessMgr,
 		SearchEngine: search.NewAdaptiveSearchDispatcher(),
 		tabCounter:   0,
+		stopAutoSave: make(chan struct{}),
 	}
 
-	// Try restoring session; if none, open default Untitled-1
+	// Try restoring session; if none or empty, open default Untitled-1
 	if err := a.RestoreSession(); err != nil || len(a.Tabs) == 0 {
 		a.NewTab("", "")
 	}
 
+	// Start continuous background auto-save loop
+	go a.startAutoSaveLoop()
+
 	return a
+}
+
+// startAutoSaveLoop periodically checks for buffer edits and persists drafts.
+func (a *App) startAutoSaveLoop() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			a.CheckAutoSave()
+		case <-a.stopAutoSave:
+			return
+		}
+	}
+}
+
+// Stop halts the background autosave routine.
+func (a *App) Stop() {
+	select {
+	case <-a.stopAutoSave:
+		// already closed
+	default:
+		close(a.stopAutoSave)
+	}
+	_ = a.SaveSession()
+	if a.SessionMgr != nil {
+		_ = a.SessionMgr.Close()
+	}
+}
+
+// CheckAutoSave checks if any tab has been modified since last save and commits to WAL.
+func (a *App) CheckAutoSave() {
+	a.mu.Lock()
+	modified := false
+	for _, doc := range a.Tabs {
+		if doc != nil && doc.CheckModified() {
+			modified = true
+		}
+	}
+	a.mu.Unlock()
+
+	if modified {
+		_ = a.SaveSession()
+	}
 }
 
 // NewTab creates a new tab. If title is empty, it generates "Untitled N".
 func (a *App) NewTab(title, content string) *buffer.Document {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	a.tabCounter++
 	if title == "" {
 		title = fmt.Sprintf("Untitled %d", a.tabCounter)
@@ -67,15 +116,17 @@ func (a *App) NewTab(title, content string) *buffer.Document {
 
 	a.Tabs = append(a.Tabs, doc)
 	a.ActiveTab = len(a.Tabs) - 1
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
 	return doc
 }
 
 // CloseTab closes tab at index. Keeps at least one tab open.
 func (a *App) CloseTab(index int) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if index < 0 || index >= len(a.Tabs) {
+		a.mu.Unlock()
 		return
 	}
 
@@ -85,42 +136,50 @@ func (a *App) CloseTab(index int) {
 		doc := buffer.NewDocument(fmt.Sprintf("doc-%d", a.tabCounter), fmt.Sprintf("Untitled %d", a.tabCounter), "", "")
 		a.Tabs = append(a.Tabs, doc)
 		a.ActiveTab = 0
+		a.mu.Unlock()
+		_ = a.SaveSession()
 		return
 	}
 
 	if a.ActiveTab >= len(a.Tabs) {
 		a.ActiveTab = len(a.Tabs) - 1
 	}
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
 }
 
 // SwitchTab changes active tab index.
 func (a *App) SwitchTab(index int) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if index >= 0 && index < len(a.Tabs) {
 		a.ActiveTab = index
 	}
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
 }
 
 // NextTab cycles to next tab (Ctrl+Tab).
 func (a *App) NextTab() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if len(a.Tabs) > 1 {
 		a.ActiveTab = (a.ActiveTab + 1) % len(a.Tabs)
 	}
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
 }
 
 // PrevTab cycles to previous tab.
 func (a *App) PrevTab() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if len(a.Tabs) > 1 {
 		a.ActiveTab = (a.ActiveTab - 1 + len(a.Tabs)) % len(a.Tabs)
 	}
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
 }
 
 // ActiveDocument returns the currently selected document.
@@ -150,8 +209,6 @@ func (a *App) OpenFile(path string) error {
 	doc := buffer.NewDocument(path, title, string(payload.Data), path)
 
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	// If current tab is clean Untitled, replace it
 	if len(a.Tabs) == 1 && a.Tabs[0].Path == "" && !a.Tabs[0].IsDirty() && a.Tabs[0].Len() == 0 {
 		a.Tabs[0] = doc
@@ -162,6 +219,9 @@ func (a *App) OpenFile(path string) error {
 	}
 
 	a.LastOpLatency = time.Since(start)
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
 	return nil
 }
 
@@ -182,6 +242,8 @@ func (a *App) SaveActiveFile() error {
 	a.mu.Lock()
 	a.LastOpLatency = time.Since(start)
 	a.mu.Unlock()
+
+	_ = a.SaveSession()
 	return nil
 }
 
@@ -232,8 +294,13 @@ func (a *App) RestoreSession() error {
 	a.Tabs = make([]*buffer.Document, 0, len(state.Tabs))
 	for _, t := range state.Tabs {
 		doc := buffer.NewDocument(t.ID, t.Title, t.Content, t.Path)
-		if !t.IsDirty {
+		if t.IsDirty {
+			doc.SetDirty(true)
+		} else {
 			doc.MarkSaved()
+		}
+		if t.CursorLine > 0 && doc.State != nil {
+			doc.State.GoTo(editor.Pos{Line: t.CursorLine - 1, Col: max(0, t.CursorCol - 1)})
 		}
 		a.Tabs = append(a.Tabs, doc)
 	}
@@ -243,6 +310,11 @@ func (a *App) RestoreSession() error {
 	} else {
 		a.ActiveTab = 0
 	}
+
+	if len(a.Tabs) > a.tabCounter {
+		a.tabCounter = len(a.Tabs)
+	}
+
 	return nil
 }
 

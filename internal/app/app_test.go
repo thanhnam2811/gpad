@@ -9,6 +9,8 @@ import (
 
 func TestAppTabsAndNavigation(t *testing.T) {
 	app := NewApp()
+	defer app.Stop()
+
 	if len(app.Tabs) != 1 {
 		t.Fatalf("expected 1 tab, got %d", len(app.Tabs))
 	}
@@ -48,34 +50,52 @@ func TestAppTabsAndNavigation(t *testing.T) {
 	_ = tab2
 }
 
-func TestAppSessionPersistence(t *testing.T) {
+func TestAppSessionPersistenceAndRecovery(t *testing.T) {
 	tmpDir := t.TempDir()
-	mgr, err := session.NewManager(filepath.Join(tmpDir, "sess"))
+	sessDir := filepath.Join(tmpDir, "sess")
+	mgr1, err := session.NewManager(sessDir)
 	if err != nil {
 		t.Fatalf("session.NewManager error: %v", err)
 	}
 
 	app1 := &App{
-		SessionMgr: mgr,
+		SessionMgr: mgr1,
 	}
-	app1.NewTab("Note 1", "Draft content 1")
-	app1.NewTab("Note 2", "Draft content 2")
+	app1.NewTab("Untitled 1", "Initial draft note")
 
-	if err := app1.SaveSession(); err != nil {
-		t.Fatalf("SaveSession failed: %v", err)
+	// User types in Untitled 1
+	app1.Tabs[0].Buffer.Edit(struct{ Start, End int; Text string }{Start: 0, End: 0, Text: "Important: "})
+
+	// AutoSave detects typing
+	app1.CheckAutoSave()
+
+	// Simulate app quit
+	if err := mgr1.Close(); err != nil {
+		t.Fatalf("mgr1.Close failed: %v", err)
 	}
+
+	// Simulate reopening Gopad++
+	mgr2, err := session.NewManager(sessDir)
+	if err != nil {
+		t.Fatalf("mgr2 NewManager failed: %v", err)
+	}
+	defer mgr2.Close()
 
 	app2 := &App{
-		SessionMgr: mgr,
+		SessionMgr: mgr2,
 	}
 	if err := app2.RestoreSession(); err != nil {
 		t.Fatalf("RestoreSession failed: %v", err)
 	}
 
-	if len(app2.Tabs) != 2 {
-		t.Fatalf("expected 2 restored tabs, got %d", len(app2.Tabs))
+	if len(app2.Tabs) != 1 {
+		t.Fatalf("expected 1 restored tab, got %d", len(app2.Tabs))
 	}
-	if app2.Tabs[0].Content() != "Draft content 1" {
-		t.Fatalf("expected tab 0 content 'Draft content 1', got %q", app2.Tabs[0].Content())
+	expectedContent := "Important: Initial draft note"
+	if app2.Tabs[0].Content() != expectedContent {
+		t.Fatalf("expected tab content %q, got %q", expectedContent, app2.Tabs[0].Content())
+	}
+	if !app2.Tabs[0].IsDirty() {
+		t.Fatalf("restored draft should be marked dirty")
 	}
 }

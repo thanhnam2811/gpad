@@ -13,6 +13,11 @@ import (
 func main() {
 	application := app.NewApp()
 
+	// Ensure WAL draft session is persisted and resources closed on quit
+	mygo.App.OnQuit(func() {
+		application.Stop()
+	})
+
 	// Handle initial file argument if passed: gpad <filename>
 	if len(os.Args) > 1 {
 		_ = application.OpenFile(os.Args[1])

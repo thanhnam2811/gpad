@@ -25,6 +25,7 @@ coverage.html
 .session/
 *.wal
 *.tmp
+*.log
 
 # IDE / Editor
 .vscode/

@@ -9,13 +9,15 @@ import (
 
 // Document wraps an editor.Buffer with document-level metadata and metrics.
 type Document struct {
-	ID       string
-	Path     string
-	Title    string
-	Buffer   *editor.Buffer
-	State    *editor.State
-	Encoding string
-	CRLF     bool
+	ID               string
+	Path             string
+	Title            string
+	Buffer           *editor.Buffer
+	State            *editor.State
+	Encoding         string
+	CRLF             bool
+	Dirty            bool
+	LastSavedVersion uint64
 }
 
 // NewDocument creates a new Document instance from raw content.
@@ -33,29 +35,55 @@ func NewDocument(id, title, content string, path string) *Document {
 	}
 
 	doc := &Document{
-		ID:       id,
-		Path:     path,
-		Title:    title,
-		Buffer:   buf,
-		State:    st,
-		Encoding: "UTF-8",
-		CRLF:     crlf,
+		ID:               id,
+		Path:             path,
+		Title:            title,
+		Buffer:           buf,
+		State:            st,
+		Encoding:         "UTF-8",
+		CRLF:             crlf,
+		Dirty:            false,
+		LastSavedVersion: buf.Version(),
 	}
 	return doc
 }
 
 // IsDirty returns true if document has unsaved modifications.
 func (d *Document) IsDirty() bool {
+	if d.Dirty {
+		return true
+	}
 	if d.Buffer == nil {
 		return false
 	}
 	return d.Buffer.Modified()
 }
 
-// MarkSaved resets the modified flag.
+// SetDirty manually sets the dirty flag (e.g. when restoring an unsaved draft).
+func (d *Document) SetDirty(dirty bool) {
+	d.Dirty = dirty
+}
+
+// CheckModified detects if the buffer version changed since last check.
+func (d *Document) CheckModified() bool {
+	if d.Buffer == nil {
+		return false
+	}
+	v := d.Buffer.Version()
+	if v != d.LastSavedVersion {
+		d.LastSavedVersion = v
+		d.Dirty = true
+		return true
+	}
+	return false
+}
+
+// MarkSaved resets the modified flag and syncs version.
 func (d *Document) MarkSaved() {
+	d.Dirty = false
 	if d.Buffer != nil {
 		d.Buffer.MarkSaved()
+		d.LastSavedVersion = d.Buffer.Version()
 	}
 }
 

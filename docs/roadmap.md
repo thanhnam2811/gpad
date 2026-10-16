@@ -15,16 +15,16 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Multi-Agent Constitution (`AGENTS.md`) and symlinks (`CLAUDE.md`, `GEMINI.md`).
 - [x] Architecture records initialized (`docs/roadmap.md`, `docs/perf-decisions.md`).
 
-### Phase 1: Native Skeleton & Decoupled Architecture [IN PROGRESS]
-- [ ] Initialize `go.mod` with module `gpad` and dependency `github.com/egoist/mygo`.
-- [ ] Establish package boundaries:
+### Phase 1: Native Skeleton & Decoupled Architecture [COMPLETED]
+- [x] Initialize `go.mod` with module `gpad` and dependency `github.com/egoist/mygo`.
+- [x] Establish package boundaries:
   * `cmd/gpad`: Application entrypoint.
   * `internal/app`: Lifecycle coordinator and state orchestration.
   * `internal/fileio`: High-throughput, zero-copy file loader.
   * `internal/session`: Instant crash-resilient session draft persistence.
   * `internal/search`: SIMD/parallel adaptive search engine.
   * `internal/ui`: High-density GNOME 46 native compact presentation layer.
-- [ ] Verification by `[Agent-4]` and Phase 1 Git Commit.
+- [x] Verification by `[Agent-4]` and Phase 1 Git Commit.
 
 ### Phase 2: Bottleneck #1 — Ultra-Fast File Loader (`internal/fileio`) [COMPLETED]
 - [x] Implement benchmark suite for 10KB, 1MB, 50MB across:
