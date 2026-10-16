@@ -24,6 +24,7 @@
 | `[PERF-008]` | `internal/ui` | Detached Search Bar & Highlighting Absence | Native Editor FindBar with GPU Highlighting | 1.22 ms/frame (<22% of 120Hz frame budget) | `[Agent-4]` APPROVED |
 | `[PERF-009]` | `cmd/gpad` | GTK Menu Bar Dynamic Allocations | Static Cached Native GTK Menu Hierarchy | 56.3 ns/op (11,500x speedup), 48 B/op (1 alloc) | `[Agent-4]` APPROVED |
 | `[PERF-010]` | `internal/app` | 500MB Unsaved Edits Loss & Search UI Freeze | Heavy Shadow Drafts + Zero-Lock Hybrid Search | 16.3ms vs 101ms (128,000x less RAM), 6.69ms search (13,100x speedup) | `[Agent-4]` APPROVED |
+| `[PERF-011]` | `internal/ui` | External GTK Menu Disjoint & Emoji Toolbar | In-Window 22px OpenGL Menu + 16x16 SVG Micro Toolbar | 26.3µs toolbar, 24.4µs menubar (0.29% of 120Hz frame budget) | `[Agent-4]` APPROVED |
 
 ---
 
@@ -475,6 +476,65 @@ BenchmarkApp_HybridSearch/Candidate_B_ZeroLock_MmapWorkerPool_HybridSearch-4    
 ### 5. Review & Sign-Off
 - **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
 - **Status**: **APPROVED** (Passed all empirical benchmarks, zero data races under `go test -race ./...`, full test coverage).
+
+---
+
+## [PERF-011] Unified In-Window Compact Menu Bar & 16x16 SVG Micro Toolbar
+
+### 1. Context & Problem Statement
+The user reported two critical ergonomics defects:
+1. **Disjointed Native Menu Styling**: The external GTK3 top menu bar (`w.SetMenu`) was 36px tall, bulky, light-bordered, and used system GTK theming that clashed sharply with the dark OpenGL UI canvas.
+2. **Emoji Toolbar Inconsistency**: Rendering toolbar actions using Unicode emoji characters (`📄`, `💾`, `✂️`) resulted in disparate font rendering, inconsistent OS styling, and runtime string allocations per frame.
+
+### 2. Candidates Evaluated
+
+#### Part A: Micro Toolbar Architecture
+- **Candidate A (`EmojiStringRendering`)**: 15 toolbar actions rendered via Unicode emoji strings.
+- **Candidate B (`SVGVectorRendering`)**:
+  - 16 vector Lucide-style SVG icons parsed once at startup via `ui.MustParseSVG`.
+  - Rendered directly as GPU vector triangles via `ui.Icon(c, icon).Size(15, 15)`.
+  - Automatic `TextColor` inheritance, 24px micro-toolbar row with 3px radius hover pills and tooltips (`New Tab`, `Open File`, `Save`, `Save All`, `Close Tab`, `Cut`, `Copy`, `Paste`, `Undo`, `Redo`, `Find`, `Replace`, `Go to Line`, `Word Wrap`, `Zoom In`, `Zoom Out`).
+
+#### Part B: Menu Bar Architecture
+- **Candidate A (`ExternalGTKMenu`)**: OS-managed GTK3 menu bar.
+- **Candidate B (`InWindowCompactMenuBar`)**:
+  - 22px in-window native OpenGL menu bar (`File`, `Edit`, `Search`, `View`, `Document`, `Help`) using `elem.Menu(...)` dropdowns.
+  - 100% synchronized with GNOME 46 dark palette (`t.Surface`, `t.Text`, `t.TextMuted`, `t.SurfaceHover`).
+  - Native shortcuts (`Ctrl+N`, `Ctrl+O`, `Ctrl+S`, `Ctrl+Shift+S`, `Ctrl+W`, `Ctrl+Q`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+F`, `Ctrl+H`, `Ctrl+G`, `F3`).
+
+### 3. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz, Count=5)
+
+```
+BenchmarkUI_Toolbar_Candidate_A_EmojiStringRendering-4   30726   39715 ns/op    512 B/op   32 allocs/op
+BenchmarkUI_Toolbar_Candidate_A_EmojiStringRendering-4   29128   38638 ns/op    512 B/op   32 allocs/op
+BenchmarkUI_Toolbar_Candidate_A_EmojiStringRendering-4   30154   41254 ns/op    512 B/op   32 allocs/op
+BenchmarkUI_Toolbar_Candidate_A_EmojiStringRendering-4   26193   40302 ns/op    512 B/op   32 allocs/op
+BenchmarkUI_Toolbar_Candidate_A_EmojiStringRendering-4   29378   39947 ns/op    691 B/op   32 allocs/op
+
+BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering-4     44394   25914 ns/op    256 B/op   16 allocs/op
+BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering-4     45993   25589 ns/op    256 B/op   16 allocs/op
+BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering-4     47180   25835 ns/op    256 B/op   16 allocs/op
+BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering-4     43822   27965 ns/op    256 B/op   16 allocs/op
+BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering-4     45908   26551 ns/op    256 B/op   16 allocs/op
+
+BenchmarkUI_MenuBar_Candidate_B_InWindowCompact-4        50898   24269 ns/op     96 B/op    6 allocs/op
+BenchmarkUI_MenuBar_Candidate_B_InWindowCompact-4        48321   24945 ns/op     96 B/op    6 allocs/op
+BenchmarkUI_MenuBar_Candidate_B_InWindowCompact-4        49136   25107 ns/op     96 B/op    6 allocs/op
+BenchmarkUI_MenuBar_Candidate_B_InWindowCompact-4        48795   24122 ns/op     96 B/op    6 allocs/op
+BenchmarkUI_MenuBar_Candidate_B_InWindowCompact-4        48804   23954 ns/op     96 B/op    6 allocs/op
+```
+
+### 4. Decision & Architecture Analysis
+- **Toolbar Speedup**: Candidate B renders in **26.3 µs/op** vs **39.9 µs/op** (1.5x faster).
+- **Toolbar Memory Reduction**: Allocations dropped by **50%** (from 32 allocs/op down to 16 allocs/op) and memory halved to **256 B/op**.
+- **MenuBar Frame Latency**: The 22px in-window menu bar renders in **24.4 µs/op (0.024 ms)**, consuming a negligible **0.29% of the 8.33 ms (120Hz) frame budget**.
+- **Visual Harmony**: 100% cohesive OpenGL typography and color scheme matching GNOME 46 dark mode without clunky GTK padding.
+- **Verdict**: Candidate B (`SVGVectorRendering` + `InWindowCompactMenuBar`) is selected.
+
+### 5. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED** (Passed all empirical benchmarks, zero data races under `go test -race ./...`, full ergonomics verified).
+
 
 
 

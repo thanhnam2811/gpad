@@ -245,4 +245,59 @@ func BenchmarkUI_Search_Candidate_B_NativeEditorFindBar(b *testing.B) {
 	}
 }
 
+func BenchmarkUI_Toolbar_Candidate_A_EmojiStringRendering(b *testing.B) {
+	emojis := []string{"📄", "📂", "💾", "🗂️", "✕", "✂️", "📋", "📥", "↩️", "↪️", "🔍", "🔄", "➡️", "📐", "➕", "➖"}
+	renderEmoji := func(c *ui.Context) {
+		t := c.Theme()
+		ui.Row(c).FillWidth().Height(24).Background(t.Surface).Padding(1, 6).Gap(2).AlignItems(ui.Center).Children(func() {
+			for idx, em := range emojis {
+				e := em
+				btn := ui.ButtonBase(c.Key(fmt.Sprintf("emoji-btn-%d", idx))).Size(22, 22).Radius(3).Center()
+				btn.Children(func() {
+					ui.Text(c, e).FontSize(12)
+				})
+			}
+		})
+	}
+
+	tester := ui.NewTester(renderEmoji, 960, 680)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tester.Frame()
+	}
+}
+
+func BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering(b *testing.B) {
+	application := app.NewApp()
+	gui := NewUI(application)
+
+	renderSVG := func(c *ui.Context) {
+		t := c.Theme()
+		gui.renderToolbar(c, t)
+	}
+
+	tester := ui.NewTester(renderSVG, 960, 680)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tester.Frame()
+	}
+}
+
+func BenchmarkUI_MenuBar_Candidate_B_InWindowCompact(b *testing.B) {
+	application := app.NewApp()
+	gui := NewUI(application)
+
+	renderMenu := func(c *ui.Context) {
+		t := c.Theme()
+		gui.renderMenuBar(c, t)
+	}
+
+	tester := ui.NewTester(renderMenu, 960, 680)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tester.Frame()
+	}
+}
+
+
 

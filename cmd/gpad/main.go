@@ -38,13 +38,8 @@ func main() {
 			Content: ui.View(gui.Render),
 		})
 
-		// Set custom application icon on window
+		// Custom application icon on window
 		_ = w.SetIcon(gpadui.GetAppIconPNG())
-
-		// Install native GTK top menu bar
-		menu := gpadui.BuildAppMenu(application, gui, w)
-		w.SetMenu(menu)
-		mygo.App.SetMenu(menu)
 	})
 
 	if err := mygo.App.Run(); err != nil {

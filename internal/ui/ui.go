@@ -137,14 +137,20 @@ func (u *UI) Render(c *ui.Context) {
 
 	// Main container - 0px margins, occupies full window
 	ui.Column(c).Fill().Padding(0).Gap(0).Children(func() {
-		// 1. Compact Tab Bar (Height: 28px)
+		// 1. In-Window High-Density Top Menu Bar (Height: 22px)
+		u.renderMenuBar(c, t)
+
+		// 2. SVG Vector Micro Toolbar (Height: 24px)
+		u.renderToolbar(c, t)
+
+		// 3. Compact Tab Bar (Height: 28px)
 		u.renderTabBar(c, t)
 
-		// 2. Main Code Editor Viewport (Fill remainder, 0px margins)
+		// 4. Main Code Editor Viewport (Fill remainder, 0px margins)
 		// Built-in native find, replace, and goToLine automatically float docked at top-right
 		u.renderEditor(c)
 
-		// 3. Micro Status Bar (Height: 20px)
+		// 5. Micro Status Bar (Height: 20px)
 		u.renderStatusBar(c, t)
 	})
 }

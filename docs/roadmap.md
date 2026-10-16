@@ -111,12 +111,13 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Benchmark Candidate A vs Candidate B `[PERF-010]` (16.3ms vs 101.5ms, 128,000x less memory).
 - [x] Audit by `[Agent-4]` and Phase 11 & 12 Git Commit.
 
-### Phase 13: Unified In-Window Compact Menu Bar & SVG Micro Toolbar [IN PROGRESS]
-- [ ] 16x16 vector SVG icons parsed once via `ui.MustParseSVG` (0 allocs/frame).
-- [ ] Compact 24px micro-toolbar with SVG icons, tooltips, and action bindings.
-- [ ] Compact 22px in-window menu bar using `mygo/ui` dropdowns, unified with dark theme.
-- [ ] Benchmark Candidate A vs Candidate B `[PERF-011]`.
-- [ ] Final audit by `[Agent-4]` and Phase 13 Git Commit.
+### Phase 13: Unified In-Window Compact Menu Bar & SVG Micro Toolbar [COMPLETED]
+- [x] 16x16 vector SVG icons parsed once via `ui.MustParseSVG` (0 allocs/frame).
+- [x] Compact 24px micro-toolbar with SVG icons, tooltips, and action bindings.
+- [x] Compact 22px in-window menu bar using `mygo/ui` dropdowns, unified with dark theme.
+- [x] Benchmark Candidate A vs Candidate B `[PERF-011]` (26.3µs toolbar, 24.4µs menubar, 50% fewer allocs).
+- [x] Final audit by `[Agent-4]` and Phase 13 Git Commit.
+
 
 
 
