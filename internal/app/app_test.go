@@ -202,3 +202,67 @@ func TestAppDebouncedSearch(t *testing.T) {
 		t.Fatalf("expected 2 matches for 'fox', got %d", res.Count)
 	}
 }
+
+func TestAppTabLifecycleAdvanced(t *testing.T) {
+	app := NewAppWithSessionDir(t.TempDir())
+	defer app.Stop()
+
+	// Initially 1 tab
+	app.NewTab("tab1.txt", "content 1")
+	app.NewTab("tab2.txt", "content 2")
+	app.NewTab("tab3.txt", "content 3")
+	app.NewTab("tab4.txt", "content 4")
+
+	if len(app.Tabs) != 5 {
+		t.Fatalf("expected 5 tabs, got %d", len(app.Tabs))
+	}
+
+	// CloseTabsToRight of index 2 (keeps 0, 1, 2; removes 3, 4)
+	app.CloseTabsToRight(2)
+	if len(app.Tabs) != 3 {
+		t.Fatalf("expected 3 tabs after CloseTabsToRight(2), got %d", len(app.Tabs))
+	}
+
+	// CloseOtherTabs keeps only index 1
+	app.CloseOtherTabs(1)
+	if len(app.Tabs) != 1 {
+		t.Fatalf("expected 1 tab after CloseOtherTabs(1), got %d", len(app.Tabs))
+	}
+	if app.Tabs[0].Title != "tab1.txt" {
+		t.Fatalf("expected remaining tab to be 'tab1.txt', got %q", app.Tabs[0].Title)
+	}
+
+	// CloseAllTabs resets to 1 fresh untitled tab
+	app.CloseAllTabs()
+	if len(app.Tabs) != 1 {
+		t.Fatalf("expected 1 tab after CloseAllTabs(), got %d", len(app.Tabs))
+	}
+}
+
+func TestAppSaveActiveFileAs(t *testing.T) {
+	app := NewAppWithSessionDir(t.TempDir())
+	defer app.Stop()
+
+	doc := app.NewTab("scratch.txt", "Hello SaveAs")
+	savePath := filepath.Join(t.TempDir(), "target_saved.txt")
+
+	if err := app.SaveActiveFileAs(savePath); err != nil {
+		t.Fatalf("SaveActiveFileAs failed: %v", err)
+	}
+
+	if doc.Path != savePath {
+		t.Fatalf("expected doc.Path to update to %q, got %q", savePath, doc.Path)
+	}
+	if doc.IsDirty() {
+		t.Fatalf("expected doc to not be dirty after SaveActiveFileAs")
+	}
+
+	readBytes, err := os.ReadFile(savePath)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if string(readBytes) != "Hello SaveAs" {
+		t.Fatalf("expected content %q, got %q", "Hello SaveAs", string(readBytes))
+	}
+}
+

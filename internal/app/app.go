@@ -9,6 +9,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui/editor"
 	"gpad/internal/buffer"
 	"gpad/internal/fileio"
@@ -205,6 +207,67 @@ func (a *App) PrevTab() {
 	_ = a.SaveSession()
 }
 
+// CloseOtherTabs closes all tabs except the tab at index.
+func (a *App) CloseOtherTabs(index int) {
+	a.mu.Lock()
+	if index < 0 || index >= len(a.Tabs) {
+		a.mu.Unlock()
+		return
+	}
+	target := a.Tabs[index]
+	a.Tabs = []*buffer.Document{target}
+	a.ActiveTab = 0
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
+}
+
+// CloseTabsToRight closes all tabs positioned to the right of index.
+func (a *App) CloseTabsToRight(index int) {
+	a.mu.Lock()
+	if index < 0 || index >= len(a.Tabs) {
+		a.mu.Unlock()
+		return
+	}
+	a.Tabs = a.Tabs[:index+1]
+	if a.ActiveTab > index {
+		a.ActiveTab = index
+	}
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
+}
+
+// CloseAllTabs resets tabs to a single blank Untitled document.
+func (a *App) CloseAllTabs() {
+	a.mu.Lock()
+	a.Tabs = nil
+	a.tabCounter++
+	doc := buffer.NewDocument(fmt.Sprintf("doc-%d", a.tabCounter), fmt.Sprintf("Untitled %d", a.tabCounter), "", "")
+	a.Tabs = append(a.Tabs, doc)
+	a.ActiveTab = 0
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
+}
+
+// CopyFilePath copies the active document's path or title to clipboard.
+func (a *App) CopyFilePath(index int) {
+	a.mu.Lock()
+	if index < 0 || index >= len(a.Tabs) {
+		a.mu.Unlock()
+		return
+	}
+	doc := a.Tabs[index]
+	path := doc.Path
+	if path == "" {
+		path = doc.Title
+	}
+	a.mu.Unlock()
+
+	_ = mygo.Clipboard.Write(transfer.TextData(path))
+}
+
 // ActiveDocument returns the currently selected document.
 func (a *App) ActiveDocument() *buffer.Document {
 	a.mu.Lock()
@@ -326,6 +389,30 @@ func (a *App) SaveActiveFile() error {
 	if err := fileio.SaveFile(doc.Path, []byte(content)); err != nil {
 		return err
 	}
+	doc.MarkSaved()
+
+	a.mu.Lock()
+	a.LastOpLatency = time.Since(start)
+	a.mu.Unlock()
+
+	_ = a.SaveSession()
+	return nil
+}
+
+// SaveActiveFileAs saves the active document to a new target path.
+func (a *App) SaveActiveFileAs(targetPath string) error {
+	doc := a.ActiveDocument()
+	if doc == nil {
+		return fmt.Errorf("no active document to save")
+	}
+
+	start := time.Now()
+	content := doc.Content()
+	if err := fileio.SaveFile(targetPath, []byte(content)); err != nil {
+		return err
+	}
+	doc.Path = targetPath
+	doc.Title = filepath.Base(targetPath)
 	doc.MarkSaved()
 
 	a.mu.Lock()

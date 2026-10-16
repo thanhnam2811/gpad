@@ -57,6 +57,16 @@ func (u *UI) Render(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyTab) {
 		u.app.NextTab()
 	}
+	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyTab) {
+		u.app.PrevTab()
+	}
+	for i := 0; i < 9; i++ {
+		if c.Shortcut(ui.Cmd, ui.Key(int(ui.Key1)+i)) {
+			if i < len(u.app.Tabs) {
+				u.app.SwitchTab(i)
+			}
+		}
+	}
 	if c.Shortcut(ui.Cmd, ui.KeyS) {
 		_ = u.app.SaveActiveFile()
 	}
@@ -89,7 +99,7 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 	tabBarBg := t.Surface
 	activeTabBg := t.Background
 
-	ui.Row(c).FillWidth().Height(28).Background(tabBarBg).Padding(2, 4).Gap(2).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).FillWidth().Height(28).Background(tabBarBg).Padding(2, 4).Gap(3).AlignItems(ui.Center).Children(func() {
 		for i, doc := range u.app.Tabs {
 			idx := i
 			isActive := idx == u.app.ActiveTab
@@ -98,38 +108,97 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 				bg = activeTabBg
 			}
 
-			// Individual compact tab item
-			tabRow := ui.Row(c.Key(fmt.Sprintf("tab-%d", idx))).Height(24).Background(bg).Padding(2, 6).Gap(4).AlignItems(ui.Center)
-			tabRow.Children(func() {
-				// Dirty indicator dot
-				if doc.IsDirty() {
-					ui.Text(c, "●").FontSize(10).TextColor(t.Warning)
-				}
+			// Individual cohesive tab pill
+			tabPill := ui.ButtonBase(c.Key(fmt.Sprintf("tab-pill-%d", idx))).Height(24).Radius(4).Padding(0, 6).FocusRing(false).AlignItems(ui.Center)
+			isHovered := tabPill.Hovered()
+			if !isActive && isHovered {
+				tabPill.Background(t.SurfaceHover)
+			} else {
+				tabPill.Background(bg)
+			}
 
-				// Tab title button
-				title := doc.Title
-				if title == "" {
-					title = "Untitled"
-				}
-				if doc.IsLoading() {
-					title = title + " (loading...)"
-				}
-				btn := ui.Button(c.Key(fmt.Sprintf("tab-title-%d", idx)), title).Padding(0, 4)
-				if btn.Clicked() {
-					u.app.SwitchTab(idx)
-				}
-
-				// Close tab button
-				closeBtn := ui.Button(c.Key(fmt.Sprintf("tab-close-%d", idx)), "×").Padding(0, 2)
-				if closeBtn.Clicked() {
+			// Tab Context Menu (Right Click)
+			tabPill.ContextMenu(func(m *ui.Menu) {
+				if m.Item("Close Tab").Chosen() {
 					u.app.CloseTab(idx)
 				}
+				if m.Item("Close Other Tabs").Chosen() {
+					u.app.CloseOtherTabs(idx)
+				}
+				if m.Item("Close Tabs to the Right").Chosen() {
+					u.app.CloseTabsToRight(idx)
+				}
+				m.Separator()
+				if m.Item("Copy Full Path").Chosen() {
+					u.app.CopyFilePath(idx)
+				}
 			})
+
+			// Content of tab pill
+			var closedClicked bool
+			tabPill.Children(func() {
+				ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+					title := doc.Title
+					if title == "" {
+						title = "Untitled"
+					}
+					if doc.IsLoading() {
+						title = title + " (loading...)"
+					}
+
+					textElem := ui.Text(c, title).FontSize(11).SingleLine()
+					if isActive {
+						textElem.TextColor(t.Text).FontWeight(600)
+					} else {
+						textElem.TextColor(t.TextMuted)
+					}
+
+					// Indicator slot with hover duality:
+					// Hovered: close button '✕'
+					// Not hovered & Dirty: warning dot '●'
+					// Not hovered & Clean: placeholder spacer
+					if isHovered {
+						closeBtn := ui.ButtonBase(c.Key(fmt.Sprintf("tab-close-%d", idx))).Size(14, 14).Radius(3).Center().FocusRing(false)
+						if closeBtn.Hovered() {
+							closeBtn.Background(t.SurfaceHover)
+						}
+						closeBtn.Children(func() {
+							ui.Text(c, "✕").FontSize(9).TextColor(t.Text)
+						})
+						if closeBtn.Clicked() {
+							closedClicked = true
+							u.app.CloseTab(idx)
+						}
+					} else if doc.IsDirty() {
+						ui.Row(c).Size(14, 14).Center().Children(func() {
+							ui.Text(c, "●").FontSize(8).TextColor(t.Warning)
+						})
+					} else {
+						ui.Box(c).Size(14, 14)
+					}
+				})
+			})
+
+			if !closedClicked && tabPill.Clicked() {
+				u.app.SwitchTab(idx)
+			}
 		}
 
 		// New Tab Button "+"
-		newTabBtn := ui.Button(c.Key("new-tab-btn"), "+").Width(24).Height(24).Padding(0, 0)
+		newTabBtn := ui.ButtonBase(c.Key("new-tab-btn")).Size(24, 24).Radius(4).Center().FocusRing(false)
+		if newTabBtn.Hovered() {
+			newTabBtn.Background(t.SurfaceHover)
+		}
+		newTabBtn.Children(func() {
+			ui.Text(c, "+").FontSize(14).TextColor(t.TextMuted)
+		})
 		if newTabBtn.Clicked() {
+			u.app.NewTab("", "")
+		}
+
+		// Empty space: double-clicking opens a new tab
+		emptySpace := ui.Row(c.Key("tab-empty-space")).FillWidth().Height(24)
+		if emptySpace.DoubleClicked() {
 			u.app.NewTab("", "")
 		}
 	})

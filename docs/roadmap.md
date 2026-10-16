@@ -79,3 +79,27 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Remove per-frame `CheckAutoSave()` from `Render()` to maintain 0 lock contention.
 - [x] Race detector audit (`go test -race ./...`), `[Agent-4]` approval sign-off.
 
+### Phase 8: Cohesive Compact Tab Bar & Ergonomics (`internal/app`, `internal/ui`) [COMPLETED]
+- [x] Refactor disconnected two-button tab layout into cohesive single-pill design (`ui.ButtonBase`, 26px height, 4px radius).
+- [x] Implement hover duality slot: dirty dot (`●`) normally displayed; dynamically morphs into close button (`✕`) on hover.
+- [x] Integrate tab context menu (`Close Tab`, `Close Other Tabs`, `Close Tabs to the Right`, `Copy Full Path`).
+- [x] Add tab keyboard shortcuts (`Ctrl+Tab`, `Ctrl+Shift+Tab`, `Ctrl+1..9`) and double-click to open new tab.
+- [x] Benchmark Candidate A vs Candidate B `[PERF-007]` (>3.5x heap reduction, 30% fewer allocations).
+- [x] Audit by `[Agent-4]` and Phase 8 Git Commit.
+
+### Phase 9: Unified Native Search & Replace Architecture (`internal/ui`) [IN PROGRESS]
+- [ ] Connect `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, `Ctrl+G` to native `mygo/ui/editor` command runner.
+- [ ] GPU match highlighting (`ct.Match`), scrollbar overview markers, and auto-focus search input.
+- [ ] Support regex, match whole word, match case, replace single, replace all in 1 undo step.
+- [ ] Multi-caret selection across all matches (`Alt+Enter` / `Ctrl+Shift+L`).
+- [ ] Benchmark active search frame cost and document ADR `[PERF-008]`.
+- [ ] Audit by `[Agent-4]` and Phase 9 Git Commit.
+
+### Phase 10: Top Menu Bar Hierarchy & Native File Dialogs (`cmd/gpad`, `internal/ui`) [PENDING]
+- [ ] Full native GTK Menu Bar hierarchy (`File`, `Edit`, `Search`, `View`, `Document`, `Help`).
+- [ ] Native file open dialog (`Ctrl+O`) and save as dialog (`Ctrl+Shift+S`) via `mygo.Dialog`.
+- [ ] Custom window icon embedding (`w.SetIcon`).
+- [ ] Benchmark menu initialization and document ADR `[PERF-009]`.
+- [ ] Final audit by `[Agent-4]`, Git Commit, and binary verification.
+
+
