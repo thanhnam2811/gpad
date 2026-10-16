@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/egoist/mygo/ui/editor"
 	"gpad/internal/buffer"
@@ -21,6 +23,8 @@ type App struct {
 	ActiveTab      int
 	SearchOpen     bool
 	SearchQuery    string
+	LastSearchQ    string
+	IsSearching    bool
 	SearchResults  search.Result
 	LastOpLatency  time.Duration
 	StatusMessage  string
@@ -28,6 +32,10 @@ type App struct {
 	SearchEngine   search.Engine
 	tabCounter     int
 	stopAutoSave   chan struct{}
+
+	searchMu     sync.Mutex
+	searchTimer  *time.Timer
+	searchCancel context.CancelFunc
 }
 
 // NewApp initializes a new application state with one default Untitled tab.
@@ -74,7 +82,7 @@ func (a *App) startAutoSaveLoop() {
 	}
 }
 
-// Stop halts the background autosave routine.
+// Stop halts the background autosave routine and closes sessions.
 func (a *App) Stop() {
 	select {
 	case <-a.stopAutoSave:
@@ -82,6 +90,16 @@ func (a *App) Stop() {
 	default:
 		close(a.stopAutoSave)
 	}
+
+	a.searchMu.Lock()
+	if a.searchTimer != nil {
+		a.searchTimer.Stop()
+	}
+	if a.searchCancel != nil {
+		a.searchCancel()
+	}
+	a.searchMu.Unlock()
+
 	_ = a.SaveSession()
 	if a.SessionMgr != nil {
 		_ = a.SessionMgr.Close()
@@ -196,7 +214,7 @@ func (a *App) ActiveDocument() *buffer.Document {
 	return a.Tabs[a.ActiveTab]
 }
 
-// OpenFile loads a file into a new or active clean tab.
+// OpenFile loads a file into a new or active clean tab using zero-copy mapping.
 func (a *App) OpenFile(path string) error {
 	start := time.Now()
 	payload, err := fileio.LoadFile(path)
@@ -206,7 +224,9 @@ func (a *App) OpenFile(path string) error {
 	defer payload.Close()
 
 	title := filepath.Base(path)
-	doc := buffer.NewDocument(path, title, string(payload.Data), path)
+	// Zero-copy string construction pointing directly to memory mapped pages
+	str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+	doc := buffer.NewDocument(path, title, str, path)
 
 	a.mu.Lock()
 	// If current tab is clean Untitled, replace it
@@ -247,7 +267,9 @@ func (a *App) SaveActiveFile() error {
 	return nil
 }
 
-// SaveSession writes all tabs and drafts to session storage.
+// SaveSession writes tab metadata to session storage.
+// CRITICAL OPTIMIZATION: Never dump hundreds of megabytes of clean disk files into JSON.
+// Files with Path != "" that are clean save Content: "" and reload from disk on demand.
 func (a *App) SaveSession() error {
 	if a.SessionMgr == nil {
 		return nil
@@ -263,11 +285,17 @@ func (a *App) SaveSession() error {
 
 	for i, doc := range a.Tabs {
 		line, col := doc.CaretPosition()
+		content := ""
+		// Only store content for untitled drafts or small modified files (< 2MB)
+		if doc.Path == "" || (doc.IsDirty() && doc.Len() < 2*1024*1024) {
+			content = doc.Content()
+		}
+
 		state.Tabs[i] = session.TabSession{
 			ID:         doc.ID,
 			Title:      doc.Title,
 			Path:       doc.Path,
-			Content:    doc.Content(),
+			Content:    content,
 			CursorLine: line,
 			CursorCol:  col,
 			IsDirty:    doc.IsDirty(),
@@ -293,7 +321,21 @@ func (a *App) RestoreSession() error {
 
 	a.Tabs = make([]*buffer.Document, 0, len(state.Tabs))
 	for _, t := range state.Tabs {
-		doc := buffer.NewDocument(t.ID, t.Title, t.Content, t.Path)
+		var doc *buffer.Document
+		// If tab references a file on disk whose content was omitted from WAL
+		if t.Path != "" && t.Content == "" {
+			payload, err := fileio.LoadFile(t.Path)
+			if err == nil {
+				str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+				doc = buffer.NewDocument(t.Path, t.Title, str, t.Path)
+				_ = payload.Close()
+			}
+		}
+
+		if doc == nil {
+			doc = buffer.NewDocument(t.ID, t.Title, t.Content, t.Path)
+		}
+
 		if t.IsDirty {
 			doc.SetDirty(true)
 		} else {
@@ -318,7 +360,90 @@ func (a *App) RestoreSession() error {
 	return nil
 }
 
-// PerformSearch executes search on current document buffer.
+// TriggerSearch initiates a debounced asynchronous search without freezing the UI thread.
+func (a *App) TriggerSearch(query string) {
+	a.searchMu.Lock()
+	defer a.searchMu.Unlock()
+
+	// Cancel existing in-flight search
+	if a.searchCancel != nil {
+		a.searchCancel()
+		a.searchCancel = nil
+	}
+	if a.searchTimer != nil {
+		a.searchTimer.Stop()
+	}
+
+	if query == "" {
+		a.mu.Lock()
+		a.SearchQuery = ""
+		a.LastSearchQ = ""
+		a.IsSearching = false
+		a.SearchResults = search.Result{}
+		a.mu.Unlock()
+		return
+	}
+
+	a.mu.Lock()
+	a.SearchQuery = query
+	a.IsSearching = true
+	a.mu.Unlock()
+
+	// 200ms debounce
+	a.searchTimer = time.AfterFunc(200*time.Millisecond, func() {
+		a.executeAsyncSearch(query)
+	})
+}
+
+// executeAsyncSearch runs search in background goroutine with cancellation support.
+func (a *App) executeAsyncSearch(query string) {
+	a.searchMu.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	a.searchCancel = cancel
+	a.searchMu.Unlock()
+
+	doc := a.ActiveDocument()
+	if doc == nil || len(query) == 0 {
+		a.mu.Lock()
+		a.IsSearching = false
+		a.SearchResults = search.Result{}
+		a.mu.Unlock()
+		return
+	}
+
+	content := doc.Content()
+	if ctx.Err() != nil {
+		return
+	}
+
+	res := a.SearchEngine.FindAll([]byte(content), []byte(query))
+	if ctx.Err() != nil {
+		return
+	}
+
+	a.mu.Lock()
+	a.SearchResults = res
+	a.LastOpLatency = res.Duration
+	a.LastSearchQ = query
+	a.IsSearching = false
+	a.mu.Unlock()
+}
+
+// IsSearchingActive returns whether a background search is running.
+func (a *App) IsSearchingActive() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.IsSearching
+}
+
+// GetSearchResults returns the current search results.
+func (a *App) GetSearchResults() search.Result {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.SearchResults
+}
+
+// PerformSearch executes search synchronously (used by unit tests).
 func (a *App) PerformSearch(query string) {
 	doc := a.ActiveDocument()
 	if doc == nil || len(query) == 0 {
@@ -330,4 +455,6 @@ func (a *App) PerformSearch(query string) {
 	res := a.SearchEngine.FindAll([]byte(content), []byte(query))
 	a.SearchResults = res
 	a.LastOpLatency = res.Duration
+	a.LastSearchQ = query
+	a.IsSearching = false
 }

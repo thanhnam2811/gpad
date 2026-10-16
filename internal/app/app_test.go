@@ -1,9 +1,13 @@
 package app
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"gpad/internal/search"
 	"gpad/internal/session"
 )
 
@@ -97,5 +101,91 @@ func TestAppSessionPersistenceAndRecovery(t *testing.T) {
 	}
 	if !app2.Tabs[0].IsDirty() {
 		t.Fatalf("restored draft should be marked dirty")
+	}
+}
+
+func TestAppLargeFileSessionZeroContentInWAL(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessDir := filepath.Join(tmpDir, "sess")
+	mgr1, err := session.NewManager(sessDir)
+	if err != nil {
+		t.Fatalf("session.NewManager error: %v", err)
+	}
+
+	// Create a large 10MB test file on disk
+	largeFilePath := filepath.Join(tmpDir, "large_sample.log")
+	largeData := bytes.Repeat([]byte("2026-10-16 LOG LINE WITH PADDING FOR PERFORMANCE VERIFICATION.\n"), 160000) // ~10MB
+	if err := os.WriteFile(largeFilePath, largeData, 0o644); err != nil {
+		t.Fatalf("write large file failed: %v", err)
+	}
+
+	app1 := &App{
+		SessionMgr:   mgr1,
+		SearchEngine: search.NewAdaptiveSearchDispatcher(),
+	}
+	if err := app1.OpenFile(largeFilePath); err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+
+	// Ensure WAL size is under 2KB (must NEVER serialize 10MB content into session WAL)
+	walInfo, err := os.Stat(filepath.Join(sessDir, "session.wal"))
+	if err != nil {
+		t.Fatalf("stat session.wal failed: %v", err)
+	}
+	if walInfo.Size() > 2048 {
+		t.Fatalf("session.wal bloated! Expected < 2048 bytes, got %d bytes", walInfo.Size())
+	}
+
+	_ = mgr1.Close()
+
+	// Reopen app and verify clean zero-copy disk reload
+	mgr2, err := session.NewManager(sessDir)
+	if err != nil {
+		t.Fatalf("mgr2 failed: %v", err)
+	}
+	defer mgr2.Close()
+
+	app2 := &App{
+		SessionMgr: mgr2,
+	}
+	if err := app2.RestoreSession(); err != nil {
+		t.Fatalf("RestoreSession failed: %v", err)
+	}
+
+	if len(app2.Tabs) != 1 {
+		t.Fatalf("expected 1 restored tab, got %d", len(app2.Tabs))
+	}
+	if app2.Tabs[0].Len() != len(largeData) {
+		t.Fatalf("expected restored tab length %d, got %d", len(largeData), app2.Tabs[0].Len())
+	}
+	if app2.Tabs[0].IsDirty() {
+		t.Fatalf("clean file loaded from disk should not be dirty")
+	}
+}
+
+func TestAppDebouncedSearch(t *testing.T) {
+	app := &App{
+		SearchEngine: search.NewAdaptiveSearchDispatcher(),
+	}
+	app.NewTab("search_doc.txt", "The quick brown fox jumps over the lazy dog. Another fox is fast.")
+
+	// Rapid typing simulation
+	app.TriggerSearch("f")
+	app.TriggerSearch("fo")
+	app.TriggerSearch("fox")
+
+	if !app.IsSearchingActive() {
+		t.Fatalf("expected IsSearching true while debouncing")
+	}
+
+	// Wait for debounce and async execution
+	time.Sleep(350 * time.Millisecond)
+
+	if app.IsSearchingActive() {
+		t.Fatalf("expected IsSearching false after search completes")
+	}
+	res := app.GetSearchResults()
+	if res.Count != 2 {
+		t.Fatalf("expected 2 matches for 'fox', got %d", res.Count)
 	}
 }

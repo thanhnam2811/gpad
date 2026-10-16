@@ -139,11 +139,16 @@ func (u *UI) renderSearchBar(c *ui.Context, t *ui.Theme) {
 	ui.Row(c).FillWidth().Height(28).Background(t.SurfaceHover).Padding(2, 8).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "Find:").FontSize(12).TextColor(t.TextMuted)
 		if ui.TextInput(c.Key("search-input"), &u.app.SearchQuery).Width(240).Changed() {
-			u.app.PerformSearch(u.app.SearchQuery)
+			u.app.TriggerSearch(u.app.SearchQuery)
 		}
 
-		countText := fmt.Sprintf("%d matches (%d µs)", u.app.SearchResults.Count, u.app.SearchResults.Duration.Microseconds())
-		ui.Text(c, countText).FontSize(12).TextColor(t.Accent)
+		if u.app.IsSearchingActive() {
+			ui.Text(c, "Searching...").FontSize(12).TextColor(t.Warning)
+		} else {
+			res := u.app.GetSearchResults()
+			countText := fmt.Sprintf("%d matches (%d µs)", res.Count, res.Duration.Microseconds())
+			ui.Text(c, countText).FontSize(12).TextColor(t.Accent)
+		}
 
 		closeBtn := ui.Button(c.Key("search-close-btn"), "✕").Padding(0, 4)
 		if closeBtn.Clicked() {
