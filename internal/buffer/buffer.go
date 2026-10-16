@@ -2,13 +2,14 @@ package buffer
 
 import (
 	"strings"
-	"unicode/utf8"
+	"sync"
 
 	"github.com/egoist/mygo/ui/editor"
 )
 
 // Document wraps an editor.Buffer with document-level metadata and metrics.
 type Document struct {
+	mu               sync.RWMutex
 	ID               string
 	Path             string
 	Title            string
@@ -18,6 +19,9 @@ type Document struct {
 	CRLF             bool
 	Dirty            bool
 	LastSavedVersion uint64
+	Loading          bool
+	LoadingSize      int64
+	ReadyCh          chan struct{}
 }
 
 // NewDocument creates a new Document instance from raw content.
@@ -44,8 +48,28 @@ func NewDocument(id, title, content string, path string) *Document {
 		CRLF:             crlf,
 		Dirty:            false,
 		LastSavedVersion: buf.Version(),
+		Loading:          false,
 	}
 	return doc
+}
+
+// SetBufferReady atomically updates the document with the loaded buffer and state.
+func (d *Document) SetBufferReady(buf *editor.Buffer, st *editor.State) {
+	d.mu.Lock()
+	d.Buffer = buf
+	d.State = st
+	d.Loading = false
+	if buf != nil {
+		d.LastSavedVersion = buf.Version()
+	}
+	d.mu.Unlock()
+}
+
+// IsLoading returns whether the document is still being loaded asynchronously.
+func (d *Document) IsLoading() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.Loading
 }
 
 // IsDirty returns true if document has unsaved modifications.
@@ -120,17 +144,17 @@ func (d *Document) LineEndingDesc() string {
 }
 
 // CaretPosition returns current line and column (1-indexed) of primary caret.
+// Zero allocations: reads directly from editor.State cursor without extracting line text.
 func (d *Document) CaretPosition() (line, col int) {
-	if d.State == nil || d.Buffer == nil {
+	d.mu.RLock()
+	st := d.State
+	buf := d.Buffer
+	d.mu.RUnlock()
+
+	if st == nil || buf == nil {
 		return 1, 1
 	}
-	pos := d.State.CursorPos()
-	line = pos.Line + 1
-	lineText := d.Buffer.Line(pos.Line)
-	byteOffset := pos.Col
-	if byteOffset > len(lineText) {
-		byteOffset = len(lineText)
-	}
-	col = utf8.RuneCountInString(lineText[:byteOffset]) + 1
-	return line, col
+	pos := st.CursorPos()
+	return pos.Line + 1, pos.Col + 1
 }
+

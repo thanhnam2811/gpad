@@ -12,7 +12,7 @@ import (
 )
 
 func TestAppTabsAndNavigation(t *testing.T) {
-	app := NewApp()
+	app := NewAppWithSessionDir(t.TempDir())
 	defer app.Stop()
 
 	if len(app.Tabs) != 1 {
@@ -127,6 +127,12 @@ func TestAppLargeFileSessionZeroContentInWAL(t *testing.T) {
 		t.Fatalf("OpenFile failed: %v", err)
 	}
 
+	// Wait for background ingestion on app1
+	deadline1 := time.Now().Add(2 * time.Second)
+	for app1.Tabs[0].IsLoading() && time.Now().Before(deadline1) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
 	// Ensure WAL size is under 2KB (must NEVER serialize 10MB content into session WAL)
 	walInfo, err := os.Stat(filepath.Join(sessDir, "session.wal"))
 	if err != nil {
@@ -155,6 +161,13 @@ func TestAppLargeFileSessionZeroContentInWAL(t *testing.T) {
 	if len(app2.Tabs) != 1 {
 		t.Fatalf("expected 1 restored tab, got %d", len(app2.Tabs))
 	}
+
+	// Wait for background async reload on app2
+	deadline2 := time.Now().Add(2 * time.Second)
+	for app2.Tabs[0].IsLoading() && time.Now().Before(deadline2) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
 	if app2.Tabs[0].Len() != len(largeData) {
 		t.Fatalf("expected restored tab length %d, got %d", len(largeData), app2.Tabs[0].Len())
 	}

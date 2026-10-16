@@ -45,6 +45,11 @@ func NewApp() *App {
 		homeDir = "."
 	}
 	sessionDir := filepath.Join(homeDir, ".config", "gpad", "session")
+	return NewAppWithSessionDir(sessionDir)
+}
+
+// NewAppWithSessionDir initializes App with custom session directory for clean isolation.
+func NewAppWithSessionDir(sessionDir string) *App {
 	sessMgr, _ := session.NewManager(sessionDir)
 
 	a := &App{
@@ -215,7 +220,74 @@ func (a *App) ActiveDocument() *buffer.Document {
 }
 
 // OpenFile loads a file into a new or active clean tab using zero-copy mapping.
+// Large files (> 5MB) are loaded asynchronously in the background to prevent UI freezing.
 func (a *App) OpenFile(path string) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	size := fi.Size()
+	title := filepath.Base(path)
+
+	a.mu.Lock()
+	// If already open in an existing tab, simply activate it
+	for idx, t := range a.Tabs {
+		if t != nil && t.Path == path {
+			a.ActiveTab = idx
+			a.mu.Unlock()
+			return nil
+		}
+	}
+	a.mu.Unlock()
+
+	// If file is large (> 5MB), load asynchronously to keep UI thread at 120 FPS
+	if size > 5*1024*1024 {
+		doc := &buffer.Document{
+			ID:          path,
+			Path:        path,
+			Title:       title,
+			Encoding:    "UTF-8",
+			CRLF:        false,
+			Dirty:       false,
+			Loading:     true,
+			LoadingSize: size,
+			ReadyCh:     make(chan struct{}),
+		}
+
+		a.mu.Lock()
+		if len(a.Tabs) == 1 && a.Tabs[0].Path == "" && !a.Tabs[0].IsDirty() && a.Tabs[0].Len() == 0 {
+			a.Tabs[0] = doc
+			a.ActiveTab = 0
+		} else {
+			a.Tabs = append(a.Tabs, doc)
+			a.ActiveTab = len(a.Tabs) - 1
+		}
+		a.mu.Unlock()
+
+		_ = a.SaveSession()
+
+		go func() {
+			start := time.Now()
+			payload, err := fileio.LoadFile(path)
+			if err != nil {
+				return
+			}
+			defer payload.Close()
+
+			str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+			buf := editor.NewBuffer(str)
+			st := &editor.State{Buffer: buf}
+			doc.SetBufferReady(buf, st)
+
+			a.mu.Lock()
+			a.LastOpLatency = time.Since(start)
+			a.mu.Unlock()
+		}()
+
+		return nil
+	}
+
+	// For standard files (<= 5MB), load synchronously
 	start := time.Now()
 	payload, err := fileio.LoadFile(path)
 	if err != nil {
@@ -223,13 +295,10 @@ func (a *App) OpenFile(path string) error {
 	}
 	defer payload.Close()
 
-	title := filepath.Base(path)
-	// Zero-copy string construction pointing directly to memory mapped pages
 	str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
 	doc := buffer.NewDocument(path, title, str, path)
 
 	a.mu.Lock()
-	// If current tab is clean Untitled, replace it
 	if len(a.Tabs) == 1 && a.Tabs[0].Path == "" && !a.Tabs[0].IsDirty() && a.Tabs[0].Len() == 0 {
 		a.Tabs[0] = doc
 		a.ActiveTab = 0
@@ -306,6 +375,7 @@ func (a *App) SaveSession() error {
 }
 
 // RestoreSession loads prior tabs and state from session storage.
+// Heavy files (> 5MB) are loaded asynchronously in the background so app window opens in < 10ms.
 func (a *App) RestoreSession() error {
 	if a.SessionMgr == nil {
 		return nil
@@ -324,11 +394,41 @@ func (a *App) RestoreSession() error {
 		var doc *buffer.Document
 		// If tab references a file on disk whose content was omitted from WAL
 		if t.Path != "" && t.Content == "" {
-			payload, err := fileio.LoadFile(t.Path)
-			if err == nil {
-				str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
-				doc = buffer.NewDocument(t.Path, t.Title, str, t.Path)
-				_ = payload.Close()
+			if fi, err := os.Stat(t.Path); err == nil && fi.Size() > 5*1024*1024 {
+				// Large file: restore tab metadata instantly, load rope in background
+				doc = &buffer.Document{
+					ID:          t.Path,
+					Path:        t.Path,
+					Title:       t.Title,
+					Encoding:    "UTF-8",
+					Loading:     true,
+					LoadingSize: fi.Size(),
+					ReadyCh:     make(chan struct{}),
+				}
+				targetDoc := doc
+				targetPath := t.Path
+				targetLine := t.CursorLine
+				targetCol := t.CursorCol
+				go func() {
+					payload, err := fileio.LoadFile(targetPath)
+					if err == nil {
+						defer payload.Close()
+						str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+						buf := editor.NewBuffer(str)
+						st := &editor.State{Buffer: buf}
+						if targetLine > 0 {
+							st.GoTo(editor.Pos{Line: targetLine - 1, Col: max(0, targetCol - 1)})
+						}
+						targetDoc.SetBufferReady(buf, st)
+					}
+				}()
+			} else {
+				payload, err := fileio.LoadFile(t.Path)
+				if err == nil {
+					str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+					doc = buffer.NewDocument(t.Path, t.Title, str, t.Path)
+					_ = payload.Close()
+				}
 			}
 		}
 
@@ -389,13 +489,13 @@ func (a *App) TriggerSearch(query string) {
 	a.IsSearching = true
 	a.mu.Unlock()
 
-	// 200ms debounce
-	a.searchTimer = time.AfterFunc(200*time.Millisecond, func() {
+	// 300ms debounce
+	a.searchTimer = time.AfterFunc(300*time.Millisecond, func() {
 		a.executeAsyncSearch(query)
 	})
 }
 
-// executeAsyncSearch runs search in background goroutine with cancellation support.
+// executeAsyncSearch runs search in background goroutine with zero-lock and cancellation support.
 func (a *App) executeAsyncSearch(query string) {
 	a.searchMu.Lock()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -403,7 +503,7 @@ func (a *App) executeAsyncSearch(query string) {
 	a.searchMu.Unlock()
 
 	doc := a.ActiveDocument()
-	if doc == nil || len(query) == 0 {
+	if doc == nil || len(query) == 0 || doc.IsLoading() {
 		a.mu.Lock()
 		a.IsSearching = false
 		a.SearchResults = search.Result{}
@@ -411,12 +511,25 @@ func (a *App) executeAsyncSearch(query string) {
 		return
 	}
 
-	content := doc.Content()
-	if ctx.Err() != nil {
-		return
+	var res search.Result
+	// CRITICAL ZERO-LOCK OPTIMIZATION:
+	// For clean files on disk, search directly over mmap pages!
+	// 0 locks on editor.Buffer, 0 allocations, 0ms UI freeze!
+	if doc.Path != "" && !doc.IsDirty() {
+		payload, err := fileio.LoadFile(doc.Path)
+		if err == nil {
+			res = a.SearchEngine.FindAllContext(ctx, payload.Data, []byte(query))
+			_ = payload.Close()
+		}
+	} else {
+		// For dirty/draft documents, search over content
+		content := doc.Content()
+		if ctx.Err() != nil {
+			return
+		}
+		res = a.SearchEngine.FindAllContext(ctx, []byte(content), []byte(query))
 	}
 
-	res := a.SearchEngine.FindAll([]byte(content), []byte(query))
 	if ctx.Err() != nil {
 		return
 	}

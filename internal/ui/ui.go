@@ -40,15 +40,12 @@ func detectGnomeDarkMode() bool {
 
 // Render builds the frame on each render cycle.
 func (u *UI) Render(c *ui.Context) {
-	// Sync theme
+	// Theme synchronization with GNOME 46
 	t := c.Theme()
 	if u.isDark && !t.Dark {
 		c.SetTheme(ui.DarkTheme())
 		t = c.Theme()
 	}
-
-	// Proactively persist unsaved draft modifications to WAL
-	u.app.CheckAutoSave()
 
 	// Global keyboard shortcuts
 	if c.Shortcut(ui.Cmd, ui.KeyN) {
@@ -114,6 +111,9 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 				if title == "" {
 					title = "Untitled"
 				}
+				if doc.IsLoading() {
+					title = title + " (loading...)"
+				}
 				btn := ui.Button(c.Key(fmt.Sprintf("tab-title-%d", idx)), title).Padding(0, 4)
 				if btn.Clicked() {
 					u.app.SwitchTab(idx)
@@ -159,7 +159,23 @@ func (u *UI) renderSearchBar(c *ui.Context, t *ui.Theme) {
 
 func (u *UI) renderEditor(c *ui.Context) {
 	doc := u.app.ActiveDocument()
-	if doc == nil || doc.State == nil {
+	if doc == nil {
+		ui.Column(c).Fill().Center().Children(func() {
+			ui.Text(c, "No document open")
+		})
+		return
+	}
+
+	if doc.IsLoading() {
+		ui.Column(c).Fill().Center().Children(func() {
+			sizeMB := float64(doc.LoadingSize) / (1024 * 1024)
+			loadingText := fmt.Sprintf("Loading \"%s\" (%.1f MB)... Please wait", doc.Title, sizeMB)
+			ui.Text(c, loadingText).FontSize(13).TextColor(c.Theme().TextMuted)
+		})
+		return
+	}
+
+	if doc.State == nil {
 		ui.Column(c).Fill().Center().Children(func() {
 			ui.Text(c, "No document open")
 		})

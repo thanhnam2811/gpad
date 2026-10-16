@@ -2,6 +2,7 @@ package search
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"regexp"
 	"runtime"
@@ -259,3 +260,137 @@ func BenchmarkSearch_10M(b *testing.B) {
 		}
 	})
 }
+
+// Candidate 2B: Bounded Parallel Worker Pool with UI-reserve cores & Context cancellation
+func searchBoundedParallelPool(ctx context.Context, data []byte, query []byte, numWorkers int, maxStored int) ([]Match, int) {
+	dataLen := len(data)
+	qLen := len(query)
+	if qLen == 0 || dataLen < qLen {
+		return nil, 0
+	}
+
+	chunkSize := (dataLen + numWorkers - 1) / numWorkers
+	type workerResult struct {
+		matches []Match
+		count   int
+	}
+	results := make([]workerResult, numWorkers)
+	var wg sync.WaitGroup
+	perWorkerCap := (maxStored + numWorkers - 1) / numWorkers
+
+	for w := 0; w < numWorkers; w++ {
+		start := w * chunkSize
+		if start >= dataLen {
+			break
+		}
+		end := start + chunkSize
+		if end > dataLen {
+			end = dataLen
+		}
+		searchEnd := end + qLen - 1
+		if searchEnd > dataLen {
+			searchEnd = dataLen
+		}
+
+		workerIdx := w
+		chunk := data[start:searchEnd]
+
+		wg.Add(1)
+		go func(wIdx int, chunkData []byte, baseOffset int, limit int) {
+			defer wg.Done()
+			m := make([]Match, 0, min(perWorkerCap, 1024))
+			count := 0
+			off := 0
+			loopCount := 0
+
+			for {
+				loopCount++
+				if loopCount&0xff == 0 {
+					if ctx.Err() != nil {
+						return
+					}
+				}
+
+				idx := bytes.Index(chunkData[off:], query)
+				if idx == -1 {
+					break
+				}
+				abs := off + idx
+				actualOffset := baseOffset + abs
+				if actualOffset >= limit {
+					break
+				}
+
+				count++
+				if len(m) < perWorkerCap {
+					m = append(m, Match{Offset: actualOffset, Length: qLen})
+				}
+				off = abs + qLen
+			}
+			results[wIdx] = workerResult{matches: m, count: count}
+		}(workerIdx, chunk, start, end)
+	}
+
+	wg.Wait()
+	if ctx.Err() != nil {
+		return nil, 0
+	}
+
+	totalCount := 0
+	for _, r := range results {
+		totalCount += r.count
+	}
+
+	merged := make([]Match, 0, min(totalCount, maxStored))
+	for _, r := range results {
+		for _, m := range r.matches {
+			if len(merged) < maxStored {
+				merged = append(merged, m)
+			}
+		}
+	}
+	return merged, totalCount
+}
+
+func BenchmarkSearch_500M(b *testing.B) {
+	path := "../../scratch/test_500m.log"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		b.Skipf("skipping 500M bench; file %s not present: %v", path, err)
+	}
+	b.SetBytes(int64(len(data)))
+	query := []byte("transactions") // ~2.45 million occurrences
+
+	b.Run("Candidate_A_Unbounded_4Workers", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			res := searchParallelWorkerPool(data, query, 4)
+			if len(res) == 0 {
+				b.Fatal("no match")
+			}
+		}
+	})
+
+	b.Run("Candidate_B_Bounded10K_3Workers_UIReserve", func(b *testing.B) {
+		ctx := context.Background()
+		workers := max(1, runtime.NumCPU()-1)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			matches, count := searchBoundedParallelPool(ctx, data, query, workers, 10000)
+			if count == 0 || len(matches) == 0 {
+				b.Fatal("no match")
+			}
+		}
+	})
+
+	b.Run("Candidate_C_Sequential_SIMD", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			res := searchSequential(data, query)
+			if len(res) == 0 {
+				b.Fatal("no match")
+			}
+		}
+	})
+}
+

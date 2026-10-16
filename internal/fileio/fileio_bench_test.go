@@ -246,3 +246,47 @@ func BenchmarkFileIO_50M(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkFileIO_500M(b *testing.B) {
+	path := "../../scratch/test_500m.log"
+	info, err := os.Stat(path)
+	if err != nil {
+		b.Skipf("skipping 500M bench; file %s not present: %v", path, err)
+	}
+	size := info.Size()
+
+	b.Run("Candidate_A_os.ReadFile", func(b *testing.B) {
+		b.SetBytes(size)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			data, err := readFileStandard(path)
+			if err != nil || int64(len(data)) != size {
+				b.Fatalf("failed: %v", err)
+			}
+		}
+	})
+
+	b.Run("Candidate_B_syscall.Mmap", func(b *testing.B) {
+		b.SetBytes(size)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			data, unmap, err := readFileMmap(path)
+			if err != nil || int64(len(data)) != size {
+				b.Fatalf("failed: %v", err)
+			}
+			_ = unmap()
+		}
+	})
+
+	b.Run("Candidate_C_bufio.ChunkPool", func(b *testing.B) {
+		b.SetBytes(size)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			data, err := readFileChunkedPool(path)
+			if err != nil || int64(len(data)) != size {
+				b.Fatalf("failed: %v", err)
+			}
+		}
+	})
+}
+

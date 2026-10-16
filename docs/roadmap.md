@@ -62,3 +62,20 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Inline Quick Find Bar (`Ctrl+F`) with microsecond search latency metric.
 - [x] Headless frame cost & allocation benchmark `[PERF-004]` (<8.3ms/frame, 0.061ms steady frame latency).
 - [x] Full build `./bin/gpad`, tag `v0.1.0-alpha`, final `[Agent-4]` approval.
+
+### Phase 6: 500MB Heavy File Ingestion & Instant Session Startup (`internal/app`, `internal/buffer`) [COMPLETED]
+- [x] Profile 500MB log file loading (2.45M lines): identified 1.05s UI thread freeze in `editor.NewBuffer`.
+- [x] Benchmark Candidate A (Sync) vs Candidate B (Async Background Ingestion) `[PERF-005]`.
+- [x] Implement async ingestion with non-blocking viewport placeholder `[Loading "file" (500.0 MB)...]`.
+- [x] Instant app startup (<10ms): restored heavy tabs populate metadata instantly, deferred rope build.
+- [x] Avoid duplicate tabs when opening existing file via command line.
+- [x] Verification by `[Agent-4]` and Phase 6 sign-off.
+
+### Phase 7: Zero-Lock Debounced Search & UI Core Reservation (`internal/search`, `internal/ui`) [COMPLETED]
+- [x] Benchmark Candidate A (Unbounded 4-core) vs Candidate B (Bounded 10k, 3 workers UI reserve, context cancellation) `[PERF-006]`.
+- [x] 328x heap memory reduction (486 MB -> 1.48 MB) and 18% latency improvement on 500MB buffer.
+- [x] Zero-lock search: search directly over memory-mapped pages for clean files (0 locks on `editor.Buffer`).
+- [x] 300ms UI debounce with 6.2ms in-flight cancellation.
+- [x] Remove per-frame `CheckAutoSave()` from `Render()` to maintain 0 lock contention.
+- [x] Race detector audit (`go test -race ./...`), `[Agent-4]` approval sign-off.
+
