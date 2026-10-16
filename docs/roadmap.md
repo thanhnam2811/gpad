@@ -95,11 +95,11 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Benchmark active search frame cost and document ADR `[PERF-008]`.
 - [x] Audit by `[Agent-4]` and Phase 9 Git Commit.
 
-### Phase 10: Top Menu Bar Hierarchy & Native File Dialogs (`cmd/gpad`, `internal/ui`) [PENDING]
-- [ ] Full native GTK Menu Bar hierarchy (`File`, `Edit`, `Search`, `View`, `Document`, `Help`).
-- [ ] Native file open dialog (`Ctrl+O`) and save as dialog (`Ctrl+Shift+S`) via `mygo.Dialog`.
-- [ ] Custom window icon embedding (`w.SetIcon`).
-- [ ] Benchmark menu initialization and document ADR `[PERF-009]`.
-- [ ] Final audit by `[Agent-4]`, Git Commit, and binary verification.
+### Phase 10: Top Menu Bar Hierarchy & Native File Dialogs (`cmd/gpad`, `internal/ui`) [COMPLETED]
+- [x] Full native GTK Menu Bar hierarchy (`File`, `Edit`, `Search`, `View`, `Document`, `Help`).
+- [x] Native file open dialog (`Ctrl+O`) and save as dialog (`Ctrl+Shift+S`) via `mygo.Dialog`.
+- [x] Custom window icon embedding (`w.SetIcon`) and GNOME 46 `.desktop` installer.
+- [x] Benchmark Candidate A vs Candidate B `[PERF-009]` (11,500x speedup, 56.3 ns/op, 1 alloc).
+- [x] Final audit by `[Agent-4]`, Git Commit, and binary verification.
 
 

@@ -25,13 +25,26 @@ func main() {
 
 	gui := gpadui.NewUI(application)
 
+	// Ensure GNOME 46 desktop entry and icon exist
+	if binPath, err := os.Executable(); err == nil {
+		_ = gpadui.EnsureDesktopEntry(binPath)
+	}
+
 	mygo.App.WhenReady(func() {
-		mygo.NewWindow(mygo.WindowOptions{
+		w := mygo.NewWindow(mygo.WindowOptions{
 			Title:   "Gopad++",
 			Width:   960,
 			Height:  680,
 			Content: ui.View(gui.Render),
 		})
+
+		// Set custom application icon on window
+		_ = w.SetIcon(gpadui.GetAppIconPNG())
+
+		// Install native GTK top menu bar
+		menu := gpadui.BuildAppMenu(application, gui, w)
+		w.SetMenu(menu)
+		mygo.App.SetMenu(menu)
 	})
 
 	if err := mygo.App.Run(); err != nil {
