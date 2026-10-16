@@ -41,7 +41,7 @@ func NewApp() *App {
 		Tabs:         make([]*buffer.Document, 0, 8),
 		ActiveTab:    0,
 		SessionMgr:   sessMgr,
-		SearchEngine: &search.SequentialEngine{},
+		SearchEngine: search.NewAdaptiveSearchDispatcher(),
 		tabCounter:   0,
 	}
 

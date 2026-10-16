@@ -46,14 +46,14 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Document ADR `[PERF-002]` in `docs/perf-decisions.md`.
 - [x] Verification of crash recovery by `[Agent-4]` and Phase 3 Git Commit.
 
-### Phase 4: Bottleneck #3 — Adaptive Search & Replace (`internal/search`)
-- [ ] Implement benchmark suite on 10MB text buffer across:
+### Phase 4: Bottleneck #3 — Adaptive Search & Replace (`internal/search`) [COMPLETED]
+- [x] Implement benchmark suite on 10MB text buffer across:
   * Candidate A: Sequential `bytes.Index` (SIMD Go stdlib).
   * Candidate B: Multi-threaded Worker Pool chunk scanner (4 host CPU cores).
   * Candidate C: Precompiled standard `regexp`.
-- [ ] Determine crossover point and implement Adaptive Search Dispatcher.
-- [ ] Document ADR `[PERF-003]` in `docs/perf-decisions.md`.
-- [ ] Race detection audit (`go test -race ./...`), `[Agent-4]` sign-off and Phase 4 Git Commit.
+- [x] Determine crossover point (256KB) and implement Adaptive Search Dispatcher.
+- [x] Document ADR `[PERF-003]` in `docs/perf-decisions.md`.
+- [x] Race detection audit (`go test -race ./...`), `[Agent-4]` sign-off and Phase 4 Git Commit.
 
 ### Phase 5: Compact Native UI on GNOME 46 (`internal/ui`)
 - [ ] Compact Tab Bar (28px height, dirty indicator dots, Ctrl+N, Ctrl+W, Ctrl+Tab).

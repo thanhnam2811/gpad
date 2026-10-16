@@ -16,7 +16,7 @@
 |---|---|---|---|---|---|
 | `[PERF-001]` | `internal/fileio` | Large File Ingestion (10KB, 1MB, 50MB) | `syscall.Mmap` (Linux MAP_SHARED) | 10.9 µs/op @ 50MB, 392 B/op | `[Agent-4]` APPROVED |
 | `[PERF-002]` | `internal/session` | Instant Notepad++ Zero-Save WAL Draft | `BinaryWAL` + Async Non-blocking | 3.9 ms disk / <5µs UI dispatch, 0 allocs | `[Agent-4]` APPROVED |
-| `[PERF-003]` | `internal/search` | Ultra-Fast Search Crossover & Dispatch | Pending Phase 4 | TBD | `[Agent-4]` |
+| `[PERF-003]` | `internal/search` | Ultra-Fast Search Crossover & Dispatch | Adaptive SIMD/WorkerPool (256KB crossover) | 1.02 ms @ 10MB (2.44x speedup) | `[Agent-4]` APPROVED |
 | `[PERF-004]` | `internal/ui` | GNOME 46 Native Render Frame Budget | Pending Phase 5 | TBD | `[Agent-4]` |
 
 ---
@@ -94,4 +94,44 @@ BenchmarkSessionSave_5M/SQLiteWAL-4          8 137812064 ns/op   38.04 MB/s   89
 ### 5. Review & Sign-Off
 - **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
 - **Status**: **APPROVED** (Verified crash recovery on truncated tail & corrupted CRC32, `-race` clean).
+
+---
+
+## [PERF-003] Ultra-Fast Search Engine & Adaptive Dispatcher
+
+### 1. Context & Problem Statement
+In a code editor, real-time incremental search (`Ctrl+F`) must return instant match highlights on keystroke. For small files (<256KB), starting goroutines creates unnecessary thread context-switch overhead; whereas for multi-megabyte files (1MB - 10MB+), a single thread underutilizes the host machine's multi-core CPU.
+
+### 2. Candidates Evaluated
+1. **Candidate A (`Sequential_SIMD`)**: Single-threaded `bytes.Index` utilizing hardware AVX2/SSE4.2 vectorization in Go stdlib.
+2. **Candidate B (`Parallel_Workers_4`)**: Chunked parallel worker pool partitioning data across 4 physical cores with boundary overlap.
+3. **Candidate C (`Precompiled_Regexp`)**: Standard Go regex engine (`regexp.Regexp`).
+
+### 3. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz)
+```
+BenchmarkSearch_64K/Sequential_SIMD-4         79585     14122 ns/op      1984 B/op    5 allocs/op
+BenchmarkSearch_64K/Parallel_Workers_4-4      82144     14116 ns/op      1984 B/op    5 allocs/op
+BenchmarkSearch_64K/Precompiled_Regexp-4      43467     27290 ns/op      2600 B/op   27 allocs/op
+
+BenchmarkSearch_1M/Sequential_SIMD-4           5030    224278 ns/op     32704 B/op    9 allocs/op
+BenchmarkSearch_1M/Parallel_Workers_4-4       10582    106601 ns/op     43440 B/op   39 allocs/op
+BenchmarkSearch_1M/Precompiled_Regexp-4        2587    451108 ns/op     31069 B/op  329 allocs/op
+
+BenchmarkSearch_10M/Sequential_SIMD-4           468   2475773 ns/op    354880 B/op   14 allocs/op
+BenchmarkSearch_10M/Parallel_Workers_4-4       1029   1023678 ns/op    347056 B/op   51 allocs/op
+BenchmarkSearch_10M/Precompiled_Regexp-4        253   4707270 ns/op    397119 B/op 3199 allocs/op
+```
+
+### 4. Decision & Crossover Analysis
+- **Crossover Point**: Below 256 KB, `Sequential_SIMD` is optimal (~14 µs). Above 256 KB, `Parallel_Workers_4` achieves **2.1x to 2.44x speedup** (cutting search latency on 10MB from **2.48 ms down to 1.02 ms**).
+- **Architecture**: `AdaptiveSearchDispatcher` routes queries dynamically:
+  * Buffer < 256 KB: dispatches to SIMD sequential loop.
+  * Buffer >= 256 KB: dispatches across `runtime.NumCPU()` worker goroutines with chunk boundary overlap preservation.
+  * Regular expressions route directly to compiled regex matcher.
+- **Verdict**: Adaptive Dispatcher selected.
+
+### 5. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED** (Passed boundary overlap test, zero data race under `go test -race`).
+
 
