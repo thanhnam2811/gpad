@@ -1,0 +1,33 @@
+# Binaries and build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+gpad
+
+# MyGo and cache directories
+.mygo/
+dist/
+tmp/
+scratch/
+
+# Test output and profiles
+*.prof
+cpu.out
+mem.out
+coverage.html
+
+# Session storage / runtime scratch
+.session/
+*.wal
+*.tmp
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*~
