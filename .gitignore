@@ -7,7 +7,7 @@ bin/
 *.dylib
 *.test
 *.out
-gpad
+/gpad
 
 # MyGo and cache directories
 .mygo/
