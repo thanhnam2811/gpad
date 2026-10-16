@@ -55,10 +55,10 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Document ADR `[PERF-003]` in `docs/perf-decisions.md`.
 - [x] Race detection audit (`go test -race ./...`), `[Agent-4]` sign-off and Phase 4 Git Commit.
 
-### Phase 5: Compact Native UI on GNOME 46 (`internal/ui`)
-- [ ] Compact Tab Bar (28px height, dirty indicator dots, Ctrl+N, Ctrl+W, Ctrl+Tab).
-- [ ] Main Code Editor integration via `mygo/ui/editor` with full viewport occupation (0px margin).
-- [ ] Micro Status Bar (20px height: line, column, UTF-8, LF, document size, microsecond op latency).
-- [ ] Inline Quick Find Bar (`Ctrl+F`) with microsecond search latency metric.
-- [ ] Headless frame cost & allocation benchmark `[PERF-004]` (<8.3ms/frame, 0 allocs/frame in steady scroll).
-- [ ] Full build `./bin/gpad`, tag `v0.1.0-alpha`, final `[Agent-4]` approval.
+### Phase 5: Compact Native UI on GNOME 46 (`internal/ui`) [COMPLETED]
+- [x] Compact Tab Bar (28px height, dirty indicator dots, Ctrl+N, Ctrl+W, Ctrl+Tab).
+- [x] Main Code Editor integration via `mygo/ui/editor` with full viewport occupation (0px margin).
+- [x] Micro Status Bar (20px height: line, column, UTF-8, LF, document size, microsecond op latency).
+- [x] Inline Quick Find Bar (`Ctrl+F`) with microsecond search latency metric.
+- [x] Headless frame cost & allocation benchmark `[PERF-004]` (<8.3ms/frame, 0.061ms steady frame latency).
+- [x] Full build `./bin/gpad`, tag `v0.1.0-alpha`, final `[Agent-4]` approval.

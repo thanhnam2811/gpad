@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 )
 
 // Magic bytes identifying Gopad++ WAL file
@@ -33,17 +32,13 @@ type SessionState struct {
 	Tabs        []TabSession `json:"tabs"`
 }
 
-// Manager coordinates session saving with instant WAL append and async disk persistence.
+// Manager coordinates session saving with instant WAL append.
 type Manager struct {
-	mu           sync.RWMutex
-	dir          string
-	walPath      string
-	walFile      *os.File
-	latestState  *SessionState
-	saveChan     chan []byte
-	stopChan     chan struct{}
-	wg           sync.WaitGroup
-	asyncEnabled bool
+	mu          sync.Mutex
+	dir         string
+	walPath     string
+	walFile     *os.File
+	latestState *SessionState
 }
 
 // NewManager initializes a session manager storing state in dir.
@@ -68,46 +63,31 @@ func NewManager(dir string) (*Manager, error) {
 	}
 
 	m := &Manager{
-		dir:          dir,
-		walPath:      walPath,
-		walFile:      f,
-		saveChan:     make(chan []byte, 16),
-		stopChan:     make(chan struct{}),
-		asyncEnabled: true,
+		dir:     dir,
+		walPath: walPath,
+		walFile: f,
 	}
-
-	m.wg.Add(1)
-	go m.backgroundFlusher()
 
 	return m, nil
 }
 
-// SaveSnapshot performs zero-latency non-blocking snapshot dispatch.
+// SaveSnapshot writes the session snapshot directly to the WAL file.
 func (m *Manager) SaveSnapshot(state SessionState) error {
 	m.mu.Lock()
-	m.latestState = &state
-	m.mu.Unlock()
+	defer m.mu.Unlock()
 
+	m.latestState = &state
 	data, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
 
-	// Try non-blocking push to background flusher
-	select {
-	case m.saveChan <- data:
-		return nil
-	default:
-		// Queue full; write directly to WAL
-		return m.writeWALRecord(data)
-	}
+	return m.writeWALRecordLocked(data)
 }
 
-// writeWALRecord writes a binary frame: [Magic 4B][Length 4B][CRC32 4B][Payload NB]
-func (m *Manager) writeWALRecord(data []byte) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+// writeWALRecordLocked writes a binary frame: [Magic 4B][Length 4B][CRC32 4B][Payload NB].
+// Caller must hold m.mu.
+func (m *Manager) writeWALRecordLocked(data []byte) error {
 	if m.walFile == nil {
 		return fmt.Errorf("session wal closed")
 	}
@@ -127,51 +107,8 @@ func (m *Manager) writeWALRecord(data []byte) error {
 	return nil
 }
 
-// backgroundFlusher processes incoming snapshot payloads asynchronously.
-func (m *Manager) backgroundFlusher() {
-	defer m.wg.Done()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	var pending []byte
-
-	for {
-		select {
-		case data, ok := <-m.saveChan:
-			if !ok {
-				if len(pending) > 0 {
-					_ = m.writeWALRecord(pending)
-				}
-				return
-			}
-			pending = data
-		case <-ticker.C:
-			if len(pending) > 0 {
-				_ = m.writeWALRecord(pending)
-				pending = nil
-			}
-		case <-m.stopChan:
-			// Flush remaining
-			for {
-				select {
-				case data := <-m.saveChan:
-					pending = data
-				default:
-					if len(pending) > 0 {
-						_ = m.writeWALRecord(pending)
-					}
-					return
-				}
-			}
-		}
-	}
-}
-
-// Close gracefully stops the background flusher and closes WAL.
+// Close gracefully closes WAL.
 func (m *Manager) Close() error {
-	close(m.stopChan)
-	m.wg.Wait()
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

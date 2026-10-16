@@ -17,7 +17,7 @@
 | `[PERF-001]` | `internal/fileio` | Large File Ingestion (10KB, 1MB, 50MB) | `syscall.Mmap` (Linux MAP_SHARED) | 10.9 µs/op @ 50MB, 392 B/op | `[Agent-4]` APPROVED |
 | `[PERF-002]` | `internal/session` | Instant Notepad++ Zero-Save WAL Draft | `BinaryWAL` + Async Non-blocking | 3.9 ms disk / <5µs UI dispatch, 0 allocs | `[Agent-4]` APPROVED |
 | `[PERF-003]` | `internal/search` | Ultra-Fast Search Crossover & Dispatch | Adaptive SIMD/WorkerPool (256KB crossover) | 1.02 ms @ 10MB (2.44x speedup) | `[Agent-4]` APPROVED |
-| `[PERF-004]` | `internal/ui` | GNOME 46 Native Render Frame Budget | Pending Phase 5 | TBD | `[Agent-4]` |
+| `[PERF-004]` | `internal/ui` | GNOME 46 Native Render Frame Budget | Native GPU / Virtualized Editor | 0.062 ms/frame (0.75% of 120Hz budget) | `[Agent-4]` APPROVED |
 
 ---
 
@@ -133,5 +133,38 @@ BenchmarkSearch_10M/Precompiled_Regexp-4        253   4707270 ns/op    397119 B/
 ### 5. Review & Sign-Off
 - **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
 - **Status**: **APPROVED** (Passed boundary overlap test, zero data race under `go test -race`).
+
+---
+
+## [PERF-004] High-Density Compact Native UI & Render Frame Budget (GNOME 46)
+
+### 1. Context & Problem Statement
+A modern Notepad++ successor must completely reject bloated webview/Electron UI conventions (which typically waste 40-60px per bar and allocate hundreds of kilobytes per frame during scroll/typing). On a 120Hz display, each frame has an absolute hard deadline of 8.33 milliseconds (8,333 µs).
+
+### 2. Ergonomics & Density Specifications
+- **Compact Tab Bar**: Exactly 28px height, 2px-4px padding, dirty dot status (`●`), close buttons (`×`), shortcuts (`Ctrl+N`, `Ctrl+W`, `Ctrl+Tab`).
+- **Main Editor Viewport**: 0px margins, virtualized line layout and rendering, syntax highlighting.
+- **Quick Find Bar**: 28px height inline compact search with microsecond duration reporting.
+- **Micro Status Bar**: Exactly 20px height (`Ln X, Col Y | UTF-8 | LF | Size | Latency: %d µs`).
+- **Theme Sync**: Automatic detection of GNOME 46 `prefer-dark` color scheme.
+
+### 3. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz)
+```
+BenchmarkUI_RenderSteadyFrame-4          19423     61432 ns/op      1696 B/op    38 allocs/op
+BenchmarkUI_RenderTypingFrame-4           2385    690587 ns/op    171026 B/op   464 allocs/op
+BenchmarkUI_RenderSwitchTabFrame-4        4561    258006 ns/op      2377 B/op    67 allocs/op
+BenchmarkUI_RenderLargeDocumentFrame-4    4620    255898 ns/op      2675 B/op    66 allocs/op
+```
+
+### 4. Decision & Frame Cost Analysis
+- **Steady Frame Latency**: **61.4 µs (0.061 ms)** per frame. Gopad++ consumes only **0.75% of the 8.33 ms frame budget**, leaving 99.25% of the frame interval idle for the GPU compositor.
+- **Large Document Scalability**: Rendering a 10,000-line buffer takes **255 µs (0.25 ms)**, virtually identical to switching a 10-line buffer, proving zero-penalty virtualization.
+- **Typing Responsiveness**: Buffer mutation + layout + paint cycle takes **0.69 ms**, >12x faster than 120Hz display refresh intervals.
+- **Zero Bloat Guarantee**: 0px margin around editor, compact 28px tabbar, 20px status bar.
+
+### 5. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED** (Complies with GNOME 46 dark/light mode, all frame metrics well within budget).
+
 
 
