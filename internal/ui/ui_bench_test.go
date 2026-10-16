@@ -197,3 +197,52 @@ func BenchmarkUI_TabBar_Candidate_B_CohesiveSinglePill(b *testing.B) {
 	}
 }
 
+func BenchmarkUI_Search_Candidate_A_CustomSearchBar(b *testing.B) {
+	application := app.NewApp()
+	var codeBuilder strings.Builder
+	for i := 1; i <= 1000; i++ {
+		codeBuilder.WriteString(fmt.Sprintf("func fn%d() { println(\"test pattern %d\") }\n", i, i))
+	}
+	application.NewTab("search_a.go", codeBuilder.String())
+	gui := NewUI(application)
+
+	searchQuery := "test pattern"
+	renderA := func(c *ui.Context) {
+		t := c.Theme()
+		ui.Column(c).Fill().Padding(0).Gap(0).Children(func() {
+			ui.Row(c).FillWidth().Height(28).Background(t.SurfaceHover).Padding(2, 8).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "Find:").FontSize(12).TextColor(t.TextMuted)
+				ui.TextInput(c.Key("custom-search-input"), &searchQuery).Width(240)
+				ui.Text(c, "1000 matches").FontSize(12).TextColor(t.Accent)
+			})
+			gui.renderEditor(c)
+		})
+	}
+
+	tester := ui.NewTester(renderA, 960, 680)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tester.Frame()
+	}
+}
+
+func BenchmarkUI_Search_Candidate_B_NativeEditorFindBar(b *testing.B) {
+	application := app.NewApp()
+	var codeBuilder strings.Builder
+	for i := 1; i <= 1000; i++ {
+		codeBuilder.WriteString(fmt.Sprintf("func fn%d() { println(\"test pattern %d\") }\n", i, i))
+	}
+	doc := application.NewTab("search_b.go", codeBuilder.String())
+	gui := NewUI(application)
+
+	gui.OpenFind()
+	doc.State.Find("test pattern")
+
+	tester := ui.NewTester(gui.Render, 960, 680)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tester.Frame()
+	}
+}
+
+

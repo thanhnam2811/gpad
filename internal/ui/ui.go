@@ -71,10 +71,22 @@ func (u *UI) Render(c *ui.Context) {
 		_ = u.app.SaveActiveFile()
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
-		u.app.SearchOpen = !u.app.SearchOpen
+		u.OpenFind()
 	}
-	if u.app.SearchOpen && c.Shortcut(0, ui.KeyEscape) {
-		u.app.SearchOpen = false
+	if c.Shortcut(ui.Cmd, ui.KeyH) {
+		u.OpenFindReplace()
+	}
+	if c.Shortcut(0, ui.KeyF3) {
+		u.FindNext()
+	}
+	if c.Shortcut(ui.Shift, ui.KeyF3) {
+		u.FindPrevious()
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyG) {
+		u.GoToLine()
+	}
+	if c.Shortcut(ui.Alt, ui.KeyEnter) || c.Shortcut(ui.Cmd|ui.Shift, ui.KeyL) {
+		u.SelectAllMatches()
 	}
 
 	// Main container - 0px margins, occupies full window
@@ -82,15 +94,11 @@ func (u *UI) Render(c *ui.Context) {
 		// 1. Compact Tab Bar (Height: 28px)
 		u.renderTabBar(c, t)
 
-		// 2. Quick Find / Replace Bar (if active)
-		if u.app.SearchOpen {
-			u.renderSearchBar(c, t)
-		}
-
-		// 3. Main Code Editor Viewport (Fill remainder, 0px margins)
+		// 2. Main Code Editor Viewport (Fill remainder, 0px margins)
+		// Built-in native find, replace, and goToLine automatically float docked at top-right
 		u.renderEditor(c)
 
-		// 4. Micro Status Bar (Height: 20px)
+		// 3. Micro Status Bar (Height: 20px)
 		u.renderStatusBar(c, t)
 	})
 }
@@ -204,26 +212,46 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 	})
 }
 
-func (u *UI) renderSearchBar(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).FillWidth().Height(28).Background(t.SurfaceHover).Padding(2, 8).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, "Find:").FontSize(12).TextColor(t.TextMuted)
-		if ui.TextInput(c.Key("search-input"), &u.app.SearchQuery).Width(240).Changed() {
-			u.app.TriggerSearch(u.app.SearchQuery)
-		}
+// OpenFind opens the native find bar in the active editor.
+func (u *UI) OpenFind() {
+	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+		doc.State.Run(editor.Find)
+	}
+}
 
-		if u.app.IsSearchingActive() {
-			ui.Text(c, "Searching...").FontSize(12).TextColor(t.Warning)
-		} else {
-			res := u.app.GetSearchResults()
-			countText := fmt.Sprintf("%d matches (%d µs)", res.Count, res.Duration.Microseconds())
-			ui.Text(c, countText).FontSize(12).TextColor(t.Accent)
-		}
+// OpenFindReplace opens the native find & replace bar in the active editor.
+func (u *UI) OpenFindReplace() {
+	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+		doc.State.Run(editor.FindReplace)
+	}
+}
 
-		closeBtn := ui.Button(c.Key("search-close-btn"), "✕").Padding(0, 4)
-		if closeBtn.Clicked() {
-			u.app.SearchOpen = false
-		}
-	})
+// FindNext jumps to the next match.
+func (u *UI) FindNext() {
+	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+		doc.State.Run(editor.FindNext)
+	}
+}
+
+// FindPrevious jumps to the previous match.
+func (u *UI) FindPrevious() {
+	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+		doc.State.Run(editor.FindPrevious)
+	}
+}
+
+// GoToLine opens the go-to-line bar in the active editor.
+func (u *UI) GoToLine() {
+	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+		doc.State.Run(editor.GoToLine)
+	}
+}
+
+// SelectAllMatches selects all occurrences of the query as multi-carets.
+func (u *UI) SelectAllMatches() {
+	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+		doc.State.Run(editor.SelectAllMatches)
+	}
 }
 
 func (u *UI) renderEditor(c *ui.Context) {

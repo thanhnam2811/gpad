@@ -308,6 +308,61 @@ BenchmarkUI_TabBar_Candidate_B_CohesiveSinglePill-4    	    1135	   1023916 ns/o
 - **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
 - **Status**: **APPROVED** (Ergonomics verified, passes GNOME 46 dark mode guidelines, race detector clean).
 
+---
+
+## [PERF-008] Unified Native Editor Search & Replace with GPU Match Highlighting
+
+### 1. Context & Problem Statement
+The preliminary search implementation used a disconnected custom text input bar (`renderSearchBar`) drawn at the top of the window that intercepted `Ctrl+F`.
+This caused severe defects:
+- Input was clipped at low window widths and did not auto-focus.
+- No visual feedback: zero GPU match highlighting in the editor viewport and zero scrollbar overview markers.
+- Inability to navigate between matches (`F3` / `Shift+F3`).
+- Missing essential text editor options: no Regex (`.*`), no Whole Word (`ab`), no Case Sensitivity (`Aa`), no In-Selection (`[ ]`).
+- Missing search-and-replace capabilities (`Ctrl+H`, Replace, Replace All in a single undo transaction).
+- Intercepting `Ctrl+F` prevented `mygo/ui/editor`'s high-performance native Zed-style search engine from operating.
+
+### 2. Candidates Evaluated
+1. **Candidate A (`CustomSearchBar_Detached`)**: Detached custom input row with manual search dispatch.
+2. **Candidate B (`NativeEditorFindBar_GPUHighlights`)**:
+   - Direct integration with `mygo/ui/editor` native command runner (`editor.Find`, `editor.FindReplace`, `editor.FindNext`, `editor.FindPrevious`, `editor.GoToLine`, `editor.SelectAllMatches`).
+   - Floating Zed-style docked toolbar at top right with query and replacement inputs.
+   - Automatic input focus with Enter/Shift+Enter navigation.
+   - Real-time GPU match highlighting (`ct.Match` and `ct.MatchActive`) and scrollbar overview markers.
+   - Atomic replace single and Replace All within 1 undo step.
+   - Multi-cursor transformation across all matches (`Alt+Enter` / `Ctrl+Shift+L`).
+
+### 3. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz, Count=5, 1000 Matches)
+```
+BenchmarkUI_Search_Candidate_A_CustomSearchBar-4       	    3135	    364250 ns/op	    2475 B/op	      43 allocs/op
+BenchmarkUI_Search_Candidate_A_CustomSearchBar-4       	    3410	    351003 ns/op	    2475 B/op	      43 allocs/op
+BenchmarkUI_Search_Candidate_A_CustomSearchBar-4       	    3375	    349508 ns/op	    2475 B/op	      43 allocs/op
+BenchmarkUI_Search_Candidate_A_CustomSearchBar-4       	    3237	    347312 ns/op	    2475 B/op	      43 allocs/op
+BenchmarkUI_Search_Candidate_A_CustomSearchBar-4       	    3033	    356608 ns/op	    2475 B/op	      43 allocs/op
+
+BenchmarkUI_Search_Candidate_B_NativeEditorFindBar-4   	     644	   1834984 ns/op	   10484 B/op	     495 allocs/op
+BenchmarkUI_Search_Candidate_B_NativeEditorFindBar-4   	     708	   1668436 ns/op	    9327 B/op	     423 allocs/op
+BenchmarkUI_Search_Candidate_B_NativeEditorFindBar-4   	     838	   1348242 ns/op	    7814 B/op	     329 allocs/op
+BenchmarkUI_Search_Candidate_B_NativeEditorFindBar-4   	     867	   1248489 ns/op	    7045 B/op	     281 allocs/op
+BenchmarkUI_Search_Candidate_B_NativeEditorFindBar-4   	     844	   1227433 ns/op	    6438 B/op	     243 allocs/op
+```
+
+### 4. Decision & Ergonomics Analysis
+- **Frame Budget Compliance**: Candidate B renders a 1,000-line active buffer with active GPU highlighting and floating find bar in **1.22 ms - 1.83 ms** per frame. This consumes less than **22% of the 8.33 ms frame budget**, easily maintaining a buttery smooth 120 FPS.
+- **Ergonomics & Feature Completeness**: Candidate B provides complete parity with modern professional editors (Notepad++, Zed, VSCode):
+  * Auto-focused input, auto-selected query.
+  * Real-time GPU match highlights and scrollbar overview markers.
+  * F3 / Shift+F3 navigation.
+  * Case sensitive, whole word, regex, in selection.
+  * Replace single and Replace All in 1 undo transaction.
+  * Alt+Enter multi-caret spawning.
+- **Verdict**: Candidate B (`NativeEditorFindBar`) is selected.
+
+### 5. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED** (Frame budget < 8.33ms satisfied, zero race condition under `go test -race`).
+
+
 
 
 

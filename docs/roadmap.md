@@ -87,13 +87,13 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Benchmark Candidate A vs Candidate B `[PERF-007]` (>3.5x heap reduction, 30% fewer allocations).
 - [x] Audit by `[Agent-4]` and Phase 8 Git Commit.
 
-### Phase 9: Unified Native Search & Replace Architecture (`internal/ui`) [IN PROGRESS]
-- [ ] Connect `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, `Ctrl+G` to native `mygo/ui/editor` command runner.
-- [ ] GPU match highlighting (`ct.Match`), scrollbar overview markers, and auto-focus search input.
-- [ ] Support regex, match whole word, match case, replace single, replace all in 1 undo step.
-- [ ] Multi-caret selection across all matches (`Alt+Enter` / `Ctrl+Shift+L`).
-- [ ] Benchmark active search frame cost and document ADR `[PERF-008]`.
-- [ ] Audit by `[Agent-4]` and Phase 9 Git Commit.
+### Phase 9: Unified Native Search & Replace Architecture (`internal/ui`) [COMPLETED]
+- [x] Connect `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, `Ctrl+G` to native `mygo/ui/editor` command runner.
+- [x] GPU match highlighting (`ct.Match`), scrollbar overview markers, and auto-focus search input.
+- [x] Support regex, match whole word, match case, replace single, replace all in 1 undo step.
+- [x] Multi-caret selection across all matches (`Alt+Enter` / `Ctrl+Shift+L`).
+- [x] Benchmark active search frame cost and document ADR `[PERF-008]`.
+- [x] Audit by `[Agent-4]` and Phase 9 Git Commit.
 
 ### Phase 10: Top Menu Bar Hierarchy & Native File Dialogs (`cmd/gpad`, `internal/ui`) [PENDING]
 - [ ] Full native GTK Menu Bar hierarchy (`File`, `Edit`, `Search`, `View`, `Document`, `Help`).

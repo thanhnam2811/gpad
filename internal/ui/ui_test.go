@@ -33,13 +33,21 @@ func TestUIHeadlessComponents(t *testing.T) {
 		t.Fatalf("expected dirty dot '●' when document is dirty, texts: %v", tester.Texts())
 	}
 
-	// Test search toggle
-	application.SearchOpen = true
-	application.SearchQuery = "package"
-	application.PerformSearch("package")
+	// Test native editor find
+	gui.OpenFind()
+	doc.State.Find("main")
 	tester.Frame()
 
-	if !tester.HasText("Find:") {
-		t.Fatalf("expected 'Find:' search bar when SearchOpen is true, texts: %v", tester.Texts())
+	count, _ := doc.State.FindMatches()
+	if count != 2 {
+		t.Fatalf("expected 2 matches for 'main', got %d", count)
 	}
+
+	// Test FindNext
+	gui.FindNext()
+	tester.Frame()
+
+	// Test GoToLine
+	gui.GoToLine()
+	tester.Frame()
 }
