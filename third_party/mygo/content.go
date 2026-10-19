@@ -86,9 +86,10 @@ func (w *Window) attachContent() {
 			})
 		},
 		PlaceWebViews: w.placeWebViews,
-		PopupMenu: func(m *platform.Menu, x, y float64, chosen func(int)) {
+		PopupMenu: func(m *platform.Menu, x, y float64, chosen func(int)) bool {
 			if w.popupMenuHandler != nil && w.popupMenuHandler(m.Items, x, y, chosen) {
-				return
+				w.contentChanged()
+				return true
 			}
 			pos := &platform.Point{X: int(math.Round(x)), Y: int(math.Round(y))}
 			menu := NewMenu(contentMenu(m, chosen))
@@ -99,6 +100,7 @@ func (w *Window) attachContent() {
 					menu.popup(w, pos, m.RightToLeft)
 				}
 			})
+			return false
 		},
 	}
 	w.content.AttachContent(w.conn)

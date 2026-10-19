@@ -698,8 +698,9 @@ func (h *windowHost) tabIntoWebView(v NativeWebView, back bool) {
 	}
 }
 
-func (h *windowHost) popupMenu(m *platform.Menu, x, y float32, chosen func(int)) {
+func (h *windowHost) popupMenu(m *platform.Menu, x, y float32, chosen func(int)) bool {
 	if h.conn.PopupMenu != nil {
-		h.conn.PopupMenu(m, float64(x), float64(y), chosen)
+		return h.conn.PopupMenu(m, float64(x), float64(y), chosen)
 	}
+	return false
 }

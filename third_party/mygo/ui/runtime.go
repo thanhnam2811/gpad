@@ -67,7 +67,7 @@ type host interface {
 	openURL(url string, done func(error))
 	// popupMenu shows a context menu at (x, y) after the event being
 	// handled; chosen receives the ID of the item chosen.
-	popupMenu(m *platform.Menu, x, y float32, chosen func(id int))
+	popupMenu(m *platform.Menu, x, y float32, chosen func(id int)) bool
 	// placeWebViews shows the web views where the frame shows them, and
 	// hides the others.
 	placeWebViews(views []placedWebView)
@@ -497,6 +497,9 @@ func (rt *engine) runFrame() {
 		rt.runActions()
 		rt.prepareSelectable(rt.c.root)
 		rt.resolveMenu()
+		if rt.showMenu() {
+			rt.consumed = true
+		}
 		rt.endPass()
 		if rt.closing {
 			return // an action closed it

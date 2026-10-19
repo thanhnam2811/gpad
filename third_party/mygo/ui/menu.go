@@ -440,14 +440,15 @@ func (rt *engine) resolveMenu() {
 }
 
 // showMenu hands the menu built in the frame to the host, which shows it
-// after the event being handled.
-func (rt *engine) showMenu() {
+// after the event being handled. It reports whether the host handled the
+// menu in-window.
+func (rt *engine) showMenu() bool {
 	p := rt.menu.pending
 	if p == nil {
-		return
+		return false
 	}
 	rt.menu.pending = nil
-	rt.host.popupMenu(p.menu, p.x, p.y, func(id int) { rt.menuChosen(p, id) })
+	return rt.host.popupMenu(p.menu, p.x, p.y, func(id int) { rt.menuChosen(p, id) })
 }
 
 // menuChosen takes the item id chosen from the menu p: the next frame

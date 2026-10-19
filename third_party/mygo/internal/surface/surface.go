@@ -74,7 +74,7 @@ type Conn struct {
 	// PopupMenu shows m as a context menu at (x, y) in the surface, in
 	// DIPs, once the event being handled returns. chosen receives the ID of
 	// the item chosen, if one is.
-	PopupMenu func(m *platform.Menu, x, y float64, chosen func(id int))
+	PopupMenu func(m *platform.Menu, x, y float64, chosen func(id int)) bool
 	// PlaceWebViews shows the window's web views where the content's last
 	// frame shows them (Surface.PlaceWebViews).
 	PlaceWebViews func(views []platform.WebViewPlacement)

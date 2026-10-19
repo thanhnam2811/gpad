@@ -187,8 +187,9 @@ func (h *headless) keepAccess(t *platform.AccessTree) {
 	h.access, h.told = t, append(h.told, t.Announcements...)
 }
 
-func (h *headless) popupMenu(m *platform.Menu, x, y float32, chosen func(int)) {
+func (h *headless) popupMenu(m *platform.Menu, x, y float32, chosen func(int)) bool {
 	h.menu, h.menuAt, h.chosen = m, [2]float32{x, y}, chosen
+	return false
 }
 func (h *headless) placeWebViews(views []placedWebView) {
 	h.webViews = append(h.webViews[:0], views...)
