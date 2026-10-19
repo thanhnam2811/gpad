@@ -342,7 +342,8 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 	tabBarBg := t.Surface
 	activeTabBg := t.Background
 
-	ui.Row(c).FillWidth().Height(28).Background(tabBarBg).Padding(2, 4).Gap(3).AlignItems(ui.Center).Children(func() {
+	// Tab Bar container: Height 28px, 0px bottom padding, anchored directly to editor viewport
+	ui.Row(c).FillWidth().Height(28).Background(tabBarBg).Padding(2, 4, 0, 4).Gap(2).AlignItems(ui.End).Children(func() {
 		for i, doc := range u.app.Tabs {
 			idx := i
 			isActive := idx == u.app.ActiveTab
@@ -351,13 +352,18 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 				bg = activeTabBg
 			}
 
-			// Individual cohesive tab pill
-			tabPill := ui.ButtonBase(c.Key(fmt.Sprintf("tab-pill-%d", idx))).Height(24).Radius(4).Padding(0, 6).FocusRing(false).AlignItems(ui.Center)
+			// Individual tab pill: 26px high, flush at bottom (Radius: Top-Left=4, Top-Right=4, Bottom-Right=0, Bottom-Left=0)
+			tabPill := ui.ButtonBase(c.Key(fmt.Sprintf("tab-pill-%d", idx))).Height(26).Radius(4, 4, 0, 0).Padding(0, 8).FocusRing(false).AlignItems(ui.Center)
 			isHovered := tabPill.Hovered()
 			if !isActive && isHovered {
 				tabPill.Background(t.SurfaceHover)
 			} else {
 				tabPill.Background(bg)
+			}
+
+			// Distinct active border at top and sides when active, seamless blend with editor background at bottom
+			if isActive {
+				tabPill.BorderWidth(1, 1, 0, 1).BorderColor(t.Border)
 			}
 
 			// In-Window Tab Context Menu (Right Click)
@@ -442,7 +448,7 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 		}
 
 		// New Tab Button "+"
-		newTabBtn := ui.ButtonBase(c.Key("new-tab-btn")).Size(24, 24).Radius(4).Center().FocusRing(false)
+		newTabBtn := ui.ButtonBase(c.Key("new-tab-btn")).Size(24, 24).Radius(4).Center().FocusRing(false).Margin(0, 0, 1, 0)
 		if newTabBtn.Hovered() {
 			newTabBtn.Background(t.SurfaceHover)
 		}
@@ -454,7 +460,7 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 		}
 
 		// Empty space: double-clicking opens a new tab
-		emptySpace := ui.Row(c.Key("tab-empty-space")).FillWidth().Height(24)
+		emptySpace := ui.Row(c.Key("tab-empty-space")).FillWidth().Height(26)
 		if emptySpace.DoubleClicked() {
 			u.app.NewTab("", "")
 		}
