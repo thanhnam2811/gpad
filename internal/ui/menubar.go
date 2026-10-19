@@ -64,8 +64,8 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 			})
 			renderMenuSeparator(c, t)
 			renderMenuItem(c, t, "close-tab", "Close Tab", u.keyRegistry.ShortcutString(keybind.ActionFileCloseTab), false, func() {
-				u.app.CloseTab(u.app.ActiveTab)
 				u.activeMenu = ""
+				u.RequestCloseTab(u.app.ActiveTab)
 			})
 			renderMenuItem(c, t, "close-other-tabs", "Close Other Tabs", "", false, func() {
 				u.app.CloseOtherTabs(u.app.ActiveTab)
@@ -246,11 +246,27 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 }
 
 func (u *UI) renderMenuButton(c *ui.Context, t *ui.Theme, menuID, label string, width float32, build func()) {
-	isOpen := u.activeMenu == menuID
 	btn := ui.ButtonBase(c.Key("menu-btn-"+menuID)).Height(20).Padding(1, 7).Radius(3).FocusRing(false).AlignItems(ui.Center)
 
+	isCurrent := u.activeMenu == menuID
+
+	// Handle click toggle
+	if btn.Clicked() {
+		if isCurrent {
+			u.activeMenu = ""
+		} else {
+			u.activeMenu = menuID
+		}
+	} else if u.activeMenu != "" && !isCurrent && btn.Hovered() {
+		// Switch open menu on hover
+		u.activeMenu = menuID
+	}
+
+	// Compute open state AFTER handling click and hover
+	open := u.activeMenu == menuID
+
 	// Visual highlight on hover or when open
-	if isOpen || btn.Hovered() {
+	if open || btn.Hovered() {
 		btn.Background(t.SurfaceHover)
 	}
 
@@ -258,22 +274,8 @@ func (u *UI) renderMenuButton(c *ui.Context, t *ui.Theme, menuID, label string, 
 		ui.Text(c, label).FontSize(11).TextColor(t.Text)
 	})
 
-	// Toggle on click
-	if btn.Clicked() {
-		if isOpen {
-			u.activeMenu = ""
-		} else {
-			u.activeMenu = menuID
-		}
-	}
-
-	// Desktop menu behavior: switch active menu when hovering over another button
-	if u.activeMenu != "" && !isOpen && btn.Hovered() {
-		u.activeMenu = menuID
-	}
-
 	// In-Window OpenGL Popover Menu (0 native GTK windows)
-	ui.PopoverBase(c, btn, &isOpen, func(panel ui.Element) {
+	ui.PopoverBase(c, btn, &open, func(panel ui.Element) {
 		panel.Background(t.Surface).Border(1, t.Border).Radius(4).Padding(3, 3).Width(width)
 		ui.Column(c).FillWidth().Gap(1).Children(func() {
 			build()
@@ -281,7 +283,7 @@ func (u *UI) renderMenuButton(c *ui.Context, t *ui.Theme, menuID, label string, 
 	})
 
 	// If closed externally (Escape or click outside), sync activeMenu state
-	if !isOpen && u.activeMenu == menuID {
+	if !open && isCurrent {
 		u.activeMenu = ""
 	}
 }

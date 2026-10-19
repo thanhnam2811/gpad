@@ -5,14 +5,30 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
 	"gpad/internal/app"
 	"gpad/internal/buffer"
 	"gpad/internal/keybind"
 	"gpad/internal/search"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 )
+
+// ConfirmCloseState stores data for the in-window confirm close modal.
+type ConfirmCloseState struct {
+	Open     bool
+	Doc      *buffer.Document
+	TabIndex int
+}
+
+// EditorContextMenuState stores data for the in-window editor context menu.
+type EditorContextMenuState struct {
+	Open   bool
+	X, Y   float32
+	Items  []*mygo.MenuItemSnapshot
+	Chosen func(int)
+}
 
 // UI represents the native UI renderer.
 type UI struct {
@@ -28,6 +44,12 @@ type UI struct {
 	activeMenu         string // "", "file", "edit", "search", "view", "doc", "help"
 	tabContextMenuOpen bool
 	tabContextMenuIdx  int
+
+	// In-Window Editor Context Menu
+	editorContextMenu EditorContextMenuState
+
+	// In-Window Confirm Close Modal
+	confirmClose ConfirmCloseState
 }
 
 // NewUI initializes the UI renderer.
@@ -38,46 +60,42 @@ func NewUI(a *app.App) *UI {
 		isDark:      detectGnomeDarkMode(),
 	}
 
-	// Register native close confirmation handler
+	// Register close confirmation handler - fallback for programmatic app close
 	a.OnConfirmClose = func(doc *buffer.Document) app.CloseAction {
-		title := doc.Title
-		if title == "" {
-			title = "Untitled"
-		}
-		res, err := mygo.Dialog.Message(mygo.MessageOptions{
-			Title:         "Gopad++",
-			Message:       fmt.Sprintf("Do you want to save changes to \"%s\"?", title),
-			Detail:        "Your changes will be lost if you don't save them.",
-			Type:          mygo.MessageWarning,
-			Buttons:       []string{"Save", "Don't Save", "Cancel"},
-			DefaultButton: 0,
-			CancelButton:  2,
-		})
-		if err != nil {
-			return app.CloseActionCancel
-		}
-		switch res.Button {
-		case 0:
-			if doc.Path == "" {
-				path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-					Title:       "Save As - Gopad++",
-					DefaultPath: doc.Title + ".txt",
-				})
-				if err != nil || path == "" {
-					return app.CloseActionCancel
-				}
-				_ = a.SaveActiveFileAs(path)
-				return app.CloseActionDiscard // already saved to disk
-			}
-			return app.CloseActionSave
-		case 1:
-			return app.CloseActionDiscard
-		default:
-			return app.CloseActionCancel
-		}
+		// When called from internal close, discard if already being closed via modal
+		return app.CloseActionDiscard
 	}
 
 	return u
+}
+
+// ShowEditorContextMenu is called when an in-canvas right-click occurs on the editor.
+func (u *UI) ShowEditorContextMenu(items []*mygo.MenuItemSnapshot, x, y float64, chosen func(int)) bool {
+	u.editorContextMenu = EditorContextMenuState{
+		Open:   true,
+		X:      float32(x),
+		Y:      float32(y),
+		Items:  items,
+		Chosen: chosen,
+	}
+	return true
+}
+
+// RequestCloseTab prompts the in-window modal if dirty, or closes immediately if clean.
+func (u *UI) RequestCloseTab(idx int) {
+	if idx < 0 || idx >= len(u.app.Tabs) {
+		return
+	}
+	doc := u.app.Tabs[idx]
+	if doc != nil && doc.IsDirty() {
+		u.confirmClose = ConfirmCloseState{
+			Open:     true,
+			Doc:      doc,
+			TabIndex: idx,
+		}
+		return
+	}
+	u.app.CloseTab(idx)
 }
 
 // detectGnomeDarkMode queries GNOME 46 color-scheme setting.
@@ -106,7 +124,7 @@ func (u *UI) Render(c *ui.Context) {
 		u.app.NewTab("", "")
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyW) {
-		u.app.CloseTab(u.app.ActiveTab)
+		u.RequestCloseTab(u.app.ActiveTab)
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyTab) {
 		u.app.NextTab()
@@ -155,12 +173,123 @@ func (u *UI) Render(c *ui.Context) {
 		u.renderTabBar(c, t)
 
 		// 4. Main Code Editor Viewport (Fill remainder, 0px margins)
-		// Built-in native find, replace, and goToLine automatically float docked at top-right
 		u.renderEditor(c)
 
 		// 5. Micro Status Bar (Height: 20px)
 		u.renderStatusBar(c, t)
 	})
+
+	// In-Window Editor Context Menu (100% OpenGL, 0 GTK popup)
+	if u.editorContextMenu.Open && len(u.editorContextMenu.Items) > 0 {
+		ui.Overlay(c, func() {
+			catcher := ui.Box(c.Key("ctx-catcher")).Absolute().Left(0).Top(0).Right(0).Bottom(0)
+			if catcher.Clicked() || catcher.OverlayShortcut(0, ui.KeyEscape) {
+				u.editorContextMenu.Open = false
+			}
+
+			posX := u.editorContextMenu.X
+			posY := u.editorContextMenu.Y
+			if posX+200 > 940 {
+				posX = 940 - 200
+			}
+			if posY+220 > 660 {
+				posY = 660 - 220
+			}
+
+			panel := ui.Box(c.Key("ctx-panel")).Absolute().Left(posX).Top(posY)
+			panel.Background(t.Surface).Border(1, t.Border).Radius(4).Padding(3, 3).Width(200)
+
+			panel.Children(func() {
+				ui.Column(c).FillWidth().Gap(1).Children(func() {
+					for _, item := range u.editorContextMenu.Items {
+						it := item
+						if it == nil || !it.Visible {
+							continue
+						}
+						if it.Type == 1 { // MenuItemSeparator
+							renderMenuSeparator(c, t)
+							continue
+						}
+						itemID := it.ID
+						shortcut := it.Accelerator
+						renderMenuItem(c, t, fmt.Sprintf("ctx-item-%d", itemID), it.Label, shortcut, !it.Enabled, func() {
+							u.editorContextMenu.Open = false
+							if u.editorContextMenu.Chosen != nil {
+								u.editorContextMenu.Chosen(itemID)
+							}
+						})
+					}
+				})
+			})
+		})
+	}
+
+	// In-Window Confirmation Modal for Unsaved Changes (100% OpenGL, 0 GTK dialogs)
+	if u.confirmClose.Open && u.confirmClose.Doc != nil {
+		ui.Modal(c, &u.confirmClose.Open, func() {
+			doc := u.confirmClose.Doc
+			tabIdx := u.confirmClose.TabIndex
+			title := doc.Title
+			if title == "" {
+				title = "Untitled"
+			}
+
+			ui.Column(c).Width(380).Background(t.Surface).Border(1, t.Border).Radius(6).Padding(16, 16).Gap(12).Children(func() {
+				ui.Text(c, "Gopad++").FontSize(14).FontWeight(600).TextColor(t.Text)
+
+				msg := fmt.Sprintf("Do you want to save changes to \"%s\"?", title)
+				ui.Text(c, msg).FontSize(12).TextColor(t.Text)
+				ui.Text(c, "Your changes will be lost if you don't save them.").FontSize(11).TextColor(t.TextMuted)
+
+				ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Margin(8, 0, 0, 0).Children(func() {
+					cancelBtn := ui.ButtonBase(c.Key("confirm-cancel")).Height(24).Padding(2, 10).Radius(4).Border(1, t.Border)
+					if cancelBtn.Hovered() {
+						cancelBtn.Background(t.SurfaceHover)
+					}
+					cancelBtn.Children(func() {
+						ui.Text(c, "Cancel").FontSize(11).TextColor(t.Text)
+					})
+					if cancelBtn.Clicked() {
+						u.confirmClose.Open = false
+					}
+
+					discardBtn := ui.ButtonBase(c.Key("confirm-discard")).Height(24).Padding(2, 10).Radius(4).Border(1, t.Border)
+					if discardBtn.Hovered() {
+						discardBtn.Background(t.SurfaceHover)
+					}
+					discardBtn.Children(func() {
+						ui.Text(c, "Don't Save").FontSize(11).TextColor(t.Text)
+					})
+					if discardBtn.Clicked() {
+						doc.Dirty = false
+						u.app.CloseTab(tabIdx)
+						u.confirmClose.Open = false
+					}
+
+					saveBtn := ui.ButtonBase(c.Key("confirm-save")).Height(24).Padding(2, 12).Radius(4).Background(t.Accent)
+					saveBtn.Children(func() {
+						ui.Text(c, "Save").FontSize(11).TextColor(ui.RGB(255, 255, 255)).FontWeight(600)
+					})
+					if saveBtn.Clicked() {
+						if doc.Path == "" {
+							path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+								Title:       "Save As - Gopad++",
+								DefaultPath: doc.Title + ".txt",
+							})
+							if err == nil && path != "" {
+								_ = u.app.SaveActiveFileAs(path)
+								u.app.CloseTab(tabIdx)
+							}
+						} else {
+							_ = u.app.SaveActiveFile()
+							u.app.CloseTab(tabIdx)
+						}
+						u.confirmClose.Open = false
+					}
+				})
+			})
+		})
+	}
 }
 
 func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
@@ -196,8 +325,8 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 				panel.Background(t.Surface).Border(1, t.Border).Radius(4).Padding(3, 3).Width(180)
 				ui.Column(c).FillWidth().Gap(1).Children(func() {
 					renderMenuItem(c, t, fmt.Sprintf("tab-close-%d", idx), "Close Tab", u.keyRegistry.ShortcutString(keybind.ActionFileCloseTab), false, func() {
-						u.app.CloseTab(idx)
 						u.tabContextMenuOpen = false
+						u.RequestCloseTab(idx)
 					})
 					renderMenuItem(c, t, fmt.Sprintf("tab-close-others-%d", idx), "Close Other Tabs", "", false, func() {
 						u.app.CloseOtherTabs(idx)
@@ -239,9 +368,6 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 					}
 
 					// Indicator slot with hover duality:
-					// Hovered: close button '✕'
-					// Not hovered & Dirty: warning dot '●'
-					// Not hovered & Clean: placeholder spacer
 					if isHovered {
 						closeBtn := ui.ButtonBase(c.Key(fmt.Sprintf("tab-close-%d", idx))).Size(14, 14).Radius(3).Center().FocusRing(false)
 						if closeBtn.Hovered() {
@@ -252,7 +378,7 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 						})
 						if closeBtn.Clicked() {
 							closedClicked = true
-							u.app.CloseTab(idx)
+							u.RequestCloseTab(idx)
 						}
 					} else if doc.IsDirty() {
 						ui.Row(c).Size(14, 14).Center().Children(func() {
@@ -290,7 +416,6 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 }
 
 // OpenFind opens the find bar in the active editor.
-// For large files (>= 5MB) or while loading, uses Zero-Lock Large-File Search to prevent UI freeze.
 func (u *UI) OpenFind() {
 	doc := u.app.ActiveDocument()
 	if doc == nil {
@@ -377,7 +502,7 @@ func (u *UI) jumpToMatch(doc *buffer.Document, m search.Match) {
 		return
 	}
 	if m.Line > 0 {
-		doc.State.GoTo(editor.Pos{Line: m.Line - 1, Col: max(0, m.Col - 1)})
+		doc.State.GoTo(editor.Pos{Line: m.Line - 1, Col: max(0, m.Col-1)})
 		doc.State.Select(m.Offset, m.Offset+m.Length)
 	}
 }

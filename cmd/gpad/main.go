@@ -71,6 +71,9 @@ func main() {
 
 		// Custom application icon on window
 		_ = w.SetIcon(gpadui.GetAppIconPNG())
+
+		// Intercept context menus to render 100% in-window using OpenGL GPU
+		w.SetPopupMenuHandler(gui.ShowEditorContextMenu)
 	})
 
 	if err := mygo.App.Run(); err != nil {
