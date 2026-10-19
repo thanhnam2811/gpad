@@ -28,6 +28,7 @@
 | `[PERF-012]` | `internal/instance` | Multi-Process Window Spawning on File Open | Unix Domain Socket IPC (Single-Instance Tab Forwarding) | 63.7 µs/op IPC dispatch, eliminates redundant windows | `[Agent-4]` APPROVED |
 | `[PERF-013]` | `internal/keybind` | Hardcoded Desynchronized Shortcut Bindings | Hash-Packed Action Registry | 24.5 ns/op lookup, 0 B/op, 0 allocs/op | `[Agent-4]` APPROVED |
 | `[PERF-014]` | `internal/ui` | Native GTK Menu Theming & Context Popup Clashing | 100% In-Window OpenGL PopoverBase Menus | 0.27 ms frame render (<3.3% of 120Hz frame budget) | `[Agent-4]` APPROVED |
+| `[PERF-015]` | `internal/ui` | Stale Frame-Budget Metric & Session-Polluting Benchmarks | Re-measured Virtualized Editor on an Isolated Session | 0.123 ms/frame (1.5% of 120Hz budget), 58 allocs/frame | `[Agent-4]` APPROVED |
 
 ---
 
@@ -635,3 +636,50 @@ BenchmarkUI_InWindowTabContextMenu_RenderOpen-4   4850   248638 ns/op   7868 B/o
 ### 5. Review & Sign-Off
 - **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
 - **Status**: **APPROVED**
+
+---
+
+## [PERF-015] Re-measurement of the Render Frame Budget (supersedes PERF-004's metric)
+
+### 1. Context & Problem Statement
+PERF-004 recorded **61.4 µs** for a steady frame. That figure was measured before the cohesive tab
+bar pill (PERF-007), the in-window find bar (PERF-008) and the OpenGL popovers (PERF-011, PERF-014)
+joined the render tree, and the README was still quoting it as 0.062 ms/frame. It no longer
+reproduces on this machine.
+
+The harness was part of the problem: every benchmark in `internal/ui` called `app.NewApp()`, which
+restores the developer's real session from `~/.config/gpad/session` and starts its autosave loop. A
+benchmark run therefore measured whatever that developer had open — on a session restored to 99 tabs
+the *same* steady-frame benchmark read **8.4 ms/op** (1,000x the isolated figure below) — and it
+persisted its own test tabs into that session. `newTestApp(tb)` now builds the app on
+`tb.TempDir()` and the run touches no user state (see the commit that introduced it).
+
+### 2. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz, Count=5, isolated session)
+```
+BenchmarkUI_RenderSteadyFrame-4          9801    123464 ns/op     2003 B/op     58 allocs/op
+BenchmarkUI_RenderTypingFrame-4          1407    922392 ns/op   160172 B/op    576 allocs/op
+BenchmarkUI_RenderSwitchTabFrame-4       2166    522574 ns/op     6336 B/op    103 allocs/op
+BenchmarkUI_RenderLargeDocumentFrame-4   3777    322485 ns/op     2899 B/op     84 allocs/op
+```
+Five runs each, all within ±4% of the values above.
+
+### 3. Decision & Comparative Analysis
+| Benchmark | PERF-004 | Re-measured | Delta | % of 8.33 ms budget |
+|---|---:|---:|---:|---:|
+| Steady frame | 61.4 µs | **123.5 µs** | 2.0x | 1.5% |
+| Typing frame | 690.6 µs | **922.4 µs** | 1.35x | 11% |
+| Switch tab frame | 258.0 µs | **522.6 µs** | 2.0x | 6.3% |
+| 10k-line frame | 255.9 µs | **322.5 µs** | 1.3x | 3.9% |
+
+- The frame budget is not at risk: the worst path uses 11% of a 120 Hz interval. The *quoted number*
+  was the defect, not the renderer; PERF-004 stands as the historical measurement of the same
+  benchmark before the later UI features.
+- **Open item (not met, recorded honestly):** `AGENTS.md` targets **0 allocations/frame** on
+  scroll/typing. Measured today: **58 allocs/frame** steady and **576 allocs/frame (160 KB/op)** on a
+  typing frame. This is the remaining headroom in this path; profiling it is a candidate for the next
+  ADR, not a solved problem.
+
+### 4. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED** (numbers reproducible across 5 counts; the contaminated 8.4 ms/op reading is
+  kept above as the reason the harness is now isolated)

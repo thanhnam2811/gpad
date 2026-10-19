@@ -222,7 +222,7 @@ Every optimization is decided by candidates benchmarked on real hardware
 | `[PERF-001]` | `internal/fileio`   | 50MB File Ingestion               | `syscall.Mmap` (Linux MAP_SHARED)             | **10.9 µs/op** (vs 14.0 ms, **1,300x faster**), 392 B/op                             | **APPROVED** |
 | `[PERF-002]` | `internal/session`  | Instant Session WAL Save          | `BinaryWAL` + Buffered Non-blocking           | **< 5 µs** UI dispatch, **0 allocs/op**                                              | **APPROVED** |
 | `[PERF-003]` | `internal/search`   | Search Engine Crossover           | Adaptive SIMD/Worker Pool (256KB crossover)   | **1.02 ms** @ 10MB (**2.44x speedup**)                                               | **APPROVED** |
-| `[PERF-004]` | `internal/ui`       | 120Hz Frame Budget                | Native GPU Virtualized Editor                 | **0.062 ms/frame** (**0.75%** of 8.33ms budget)                                      | **APPROVED** |
+| `[PERF-004]` | `internal/ui`       | 120Hz Frame Budget                | Native GPU Virtualized Editor                 | **0.123 ms/frame** (**1.5%** of 8.33ms budget, re-measured in `[PERF-015]`)           | **APPROVED** |
 | `[PERF-005]` | `internal/app`      | 500MB File Open Freezing          | Async Background Ingestion                    | **24.5 µs** UI block (vs 1.05s sync), **<10ms** launch                               | **APPROVED** |
 | `[PERF-006]` | `internal/search`   | 500MB Search & Lock Contention    | Zero-Lock Mmap Search + 3-Core UI Reserve     | **1.48 MB/op** (vs 486 MB/op), **6.2ms** cancel                                      | **APPROVED** |
 | `[PERF-007]` | `internal/ui`       | Disjointed Tab Bar                | Cohesive Single-Pill with Hover Duality       | **4,000 B/op** (**>3.5x reduction**), 0.58ms frame                                   | **APPROVED** |
@@ -233,6 +233,7 @@ Every optimization is decided by candidates benchmarked on real hardware
 | `[PERF-012]` | `internal/instance` | Multi-Window Sprawl & Forwarding  | Single-Instance Unix Socket + Top-View Raise  | **63.7 µs** IPC forwarding, **0 leaks**                                              | **APPROVED** |
 | `[PERF-013]` | `internal/keybind`  | Dynamic Key Shortcut Dispatch     | Bit-Packed `uint32` Hash Table                | **24.5 ns/op**, **0 B/op**, **0 allocs/op**                                          | **APPROVED** |
 | `[PERF-014]` | `internal/ui`       | Native OS Menu Clutter            | 100% In-Window OpenGL GPU Popovers & Modals   | **0.27 ms** menubar, **0.24 ms** tab context (<3.3% budget)                          | **APPROVED** |
+| `[PERF-015]` | `internal/ui`       | Stale Frame Metric, Session-Polluting Benchmarks | Re-measured on an Isolated Session | 5-run reproducible; **58 allocs/frame** steady, **576** typing — target 0, **open item** | **APPROVED** |
 
 ### 3. Architecture at a glance
 
