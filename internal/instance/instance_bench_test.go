@@ -9,7 +9,7 @@ func BenchmarkSingleInstance_Forward(b *testing.B) {
 	tempDir := b.TempDir()
 	sockPath := filepath.Join(tempDir, "bench_gpad.sock")
 
-	l, err := StartListener(sockPath, func(path string) {}, func() {})
+	l, err := StartListener(sockPath, func(path, token string) {}, func(token string) {})
 	if err != nil {
 		b.Fatalf("StartListener failed: %v", err)
 	}

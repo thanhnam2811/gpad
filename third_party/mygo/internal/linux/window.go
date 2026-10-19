@@ -688,6 +688,13 @@ func (w *window) Focus() {
 	gtkWindowPresent(w.win)
 }
 
+// FocusActivated focuses the window with the activation token of the process
+// that asked for it, the only way GTK takes the focus on Wayland for a window
+// of an application that is in the background.
+func (w *window) FocusActivated(token string) {
+	withActivationToken(token, w.Focus)
+}
+
 func (w *window) Blur()             {}
 func (w *window) IsFocused() bool   { return gtkWindowIsActive(w.win) }
 func (w *window) Minimize()         { gtkWindowIconify(w.win) }

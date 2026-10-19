@@ -773,6 +773,9 @@ func (w *window) Focus() {
 	w.focusWebView()
 }
 
+// FocusActivated focuses the window: Windows foregrounds it with Focus itself.
+func (w *window) FocusActivated(string) { w.Focus() }
+
 func (w *window) Blur() {
 	const gwHwndNext = 2
 	next, _, _ := procGetNextWindow.Call(w.hwnd, gwHwndNext)

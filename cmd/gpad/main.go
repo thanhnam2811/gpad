@@ -31,21 +31,25 @@ func main() {
 
 	var mainWin *mygo.Window
 
-	raiseWindow := func() {
+	// raiseWindow brings the window to the front and focuses it. The token is
+	// the activation token of the process that asked for it: without one,
+	// Wayland only marks the window as demanding attention instead of
+	// raising it over the window the user launched us from.
+	raiseWindow := func(token string) {
 		if mainWin != nil {
 			mainWin.Restore()
 			mainWin.SetAlwaysOnTop(true)
-			mainWin.Focus()
+			mainWin.FocusActivated(token)
 			mainWin.SetAlwaysOnTop(false)
 		}
 	}
 
 	// 2. Start single-instance listener to accept files from subsequent instances into new tabs
-	listener, err := instance.StartListener(sockPath, func(path string) {
+	listener, err := instance.StartListener(sockPath, func(path, token string) {
 		_ = application.OpenFile(path)
-		raiseWindow()
-	}, func() {
-		raiseWindow()
+		raiseWindow(token)
+	}, func(token string) {
+		raiseWindow(token)
 	})
 	if err == nil {
 		defer listener.Close()
@@ -83,6 +87,13 @@ func main() {
 
 		// Custom application icon on window
 		_ = mainWin.SetIcon(gpadui.GetAppIconPNG())
+
+		// Take the focus with the token of our own launch, when the
+		// launcher gave us one: the window was not started by the user
+		// pressing in it, and Wayland asks for the token to focus it.
+		if token := instance.ActivationToken(); token != "" {
+			mainWin.FocusActivated(token)
+		}
 
 		// Intercept context menus to render 100% in-window using OpenGL GPU
 		mainWin.SetPopupMenuHandler(gui.ShowEditorContextMenu)

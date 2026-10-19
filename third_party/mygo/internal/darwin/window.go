@@ -758,6 +758,10 @@ func (w *window) Focus() {
 }
 
 func (w *window) Blur() { send(w.win, "orderBack:", 0) }
+
+// FocusActivated focuses the window: macOS activates it with Focus itself.
+func (w *window) FocusActivated(string) { w.Focus() }
+
 func (w *window) IsFocused() bool {
 	return sendBool(w.win, "isKeyWindow")
 }

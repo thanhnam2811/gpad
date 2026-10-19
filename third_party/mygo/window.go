@@ -703,6 +703,16 @@ func (w *Window) IsVisible() bool { return get(w, platform.Window.IsVisible) }
 // Focus focuses the window.
 func (w *Window) Focus() { w.do(platform.Window.Focus) }
 
+// FocusActivated focuses the window with the XDG activation token of the
+// process that asked for it, which is what lets a window of an application
+// that is not in front take the focus on Wayland. The token is
+// XDG_ACTIVATION_TOKEN, or DESKTOP_STARTUP_ID for an application launched by
+// a GLib desktop application (a file manager, for instance) that set up
+// startup notification. An empty or unusable token behaves like Focus.
+func (w *Window) FocusActivated(token string) {
+	w.do(func(n platform.Window) { n.FocusActivated(token) })
+}
+
 // Blur removes focus from the window.
 func (w *Window) Blur() { w.do(platform.Window.Blur) }
 

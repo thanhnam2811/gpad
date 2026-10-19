@@ -417,6 +417,11 @@ type Window interface {
 	Hide()
 	IsVisible() bool
 	Focus()
+	// FocusActivated focuses the window with the XDG activation token of
+	// the process that asked for it: on Wayland the compositor gives the
+	// focus only to a window presented with one. Backends without such a
+	// protocol focus like Focus.
+	FocusActivated(token string)
 	Blur()
 	IsFocused() bool
 	Minimize()

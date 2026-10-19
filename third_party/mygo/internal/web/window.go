@@ -164,8 +164,12 @@ func (w *window) Hide() {
 
 func (w *window) IsVisible() bool { return w.visible }
 func (w *window) Focus()          { w.s.focus() }
-func (w *window) Blur()           { w.s.input.Call("blur") }
-func (w *window) IsFocused() bool { return w.focused }
+
+// FocusActivated focuses the window: a browser only lets the user's action
+// focus it, and gives the page no activation token.
+func (w *window) FocusActivated(string) { w.Focus() }
+func (w *window) Blur()                 { w.s.input.Call("blur") }
+func (w *window) IsFocused() bool       { return w.focused }
 
 // SetFullScreen asks the browser to show the window's element on the whole
 // screen, which it allows while the user acts.

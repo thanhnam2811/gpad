@@ -610,6 +610,7 @@ func (w *Window) ShowInactive()                      { w.mu.Lock(); w.visible = 
 func (w *Window) Hide()                              { w.mu.Lock(); w.visible = false; w.mu.Unlock() }
 func (w *Window) IsVisible() bool                    { w.mu.Lock(); defer w.mu.Unlock(); return w.visible }
 func (w *Window) Focus()                             { w.H.Focused() }
+func (w *Window) FocusActivated(string)              { w.H.Focused() }
 func (w *Window) Blur()                              { w.H.Blurred() }
 func (w *Window) IsFocused() bool                    { w.mu.Lock(); defer w.mu.Unlock(); return w.focused }
 func (w *Window) Minimize()                          { w.mu.Lock(); w.minimized = true; w.mu.Unlock(); w.H.Minimized() }

@@ -24,6 +24,18 @@ func SocketPath() string {
 	return filepath.Join(home, ".config", "gpad", "gpad.sock")
 }
 
+// ActivationToken returns the activation token of the launch of this process,
+// when its launcher gave it one. A window needs it to take the focus on
+// Wayland; GLib desktop applications (a file manager, a terminal) provide it
+// as XDG_ACTIVATION_TOKEN, and as DESKTOP_STARTUP_ID to the applications they
+// launch.
+func ActivationToken() string {
+	if token := os.Getenv("XDG_ACTIVATION_TOKEN"); token != "" {
+		return token
+	}
+	return os.Getenv("DESKTOP_STARTUP_ID")
+}
+
 // TryForward attempts to connect to an existing running gpad instance and forward file paths.
 // Returns true if successfully delivered to an active instance, false otherwise.
 func TryForward(socketPath string, filePaths []string) bool {
@@ -35,6 +47,14 @@ func TryForward(socketPath string, filePaths []string) bool {
 
 	// Set deadline for IPC handshake
 	_ = conn.SetDeadline(time.Now().Add(1 * time.Second))
+
+	// The token first: it is what lets the running instance raise its window
+	// over the one the user launched us from.
+	if token := ActivationToken(); token != "" {
+		if _, err := fmt.Fprintf(conn, "TOKEN %s\n", token); err != nil {
+			return false
+		}
+	}
 
 	for _, p := range filePaths {
 		abs, err := filepath.Abs(p)
@@ -64,14 +84,16 @@ func TryForward(socketPath string, filePaths []string) bool {
 type Listener struct {
 	path       string
 	ln         net.Listener
-	onOpenFile func(path string)
-	onFocus    func()
+	onOpenFile func(path, token string)
+	onFocus    func(token string)
 	quit       chan struct{}
 	wg         sync.WaitGroup
 }
 
 // StartListener starts listening for file open requests from subsequent gpad processes.
-func StartListener(socketPath string, onOpenFile func(path string), onFocus func()) (*Listener, error) {
+// Both callbacks receive the activation token of the requesting process, empty
+// when it has none, for raising the window with FocusActivated.
+func StartListener(socketPath string, onOpenFile func(path, token string), onFocus func(token string)) (*Listener, error) {
 	// Ensure directory exists
 	dir := filepath.Dir(socketPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -123,19 +145,22 @@ func (l *Listener) handleConn(conn net.Conn) {
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 
 	reader := bufio.NewReader(conn)
+	var token string
 	for {
 		line, err := reader.ReadString('\n')
 		line = strings.TrimSpace(line)
 		if line != "" {
 			switch {
+			case strings.HasPrefix(line, "TOKEN "):
+				token = strings.TrimSpace(strings.TrimPrefix(line, "TOKEN "))
 			case strings.HasPrefix(line, "OPEN "):
 				targetFile := strings.TrimSpace(strings.TrimPrefix(line, "OPEN "))
 				if targetFile != "" && l.onOpenFile != nil {
-					l.onOpenFile(targetFile)
+					l.onOpenFile(targetFile, token)
 				}
 			case line == "FOCUS":
 				if l.onFocus != nil {
-					l.onFocus()
+					l.onFocus(token)
 				}
 				// Acknowledge receipt
 				_, _ = fmt.Fprintln(conn, "OK")
