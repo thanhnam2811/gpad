@@ -1,96 +1,75 @@
 # Gopad++ (gpad)
 
 <p align="center">
-  <img src="assets/icon.svg" width="128" height="128" alt="Gopad++ Logo" />
+  <img src="assets/icon.svg" width="120" height="120" alt="Gopad++ Logo" />
 </p>
 
 <p align="center">
-  <strong>A High-Density, Blazingly Fast Native Text Editor for Linux (GNOME 46) inspired by Notepad++.</strong><br>
-  Built with pure Go & direct GPU OpenGL rendering via <a href="https://github.com/egoist/mygo">mygo/ui</a>.<br>
-  <em>Strictly Zero Webview. Strictly Zero Electron Bloat. 120 FPS Native Performance.</em>
+  <strong>The high-density native text editor that Linux desktops deserve.</strong><br>
+  Notepad++ ergonomics, game-engine rendering: every pixel of Gopad++ is drawn on a direct
+  OpenGL canvas in pure Go (<a href="https://github.com/egoist/mygo">mygo/ui</a>).<br>
+  <em>Zero webview. Zero Electron. Zero wasted margin. 120 FPS.</em>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version" />
+  <img src="https://img.shields.io/badge/Go-1.27.2-00ADD8?style=flat&logo=go" alt="Go Version" />
   <img src="https://img.shields.io/badge/UI-Direct_OpenGL_Purego-4FACFE?style=flat" alt="UI Backend" />
   <img src="https://img.shields.io/badge/Platform-Linux_GNOME_46-E95420?style=flat&logo=ubuntu" alt="Platform" />
-  <img src="https://img.shields.io/badge/Memory_Overhead-0px_Margin_/_Zero_Webview-brightgreen?style=flat" alt="Density" />
-  <img src="https://img.shields.io/badge/Latency-120_FPS_Target-success?style=flat" alt="Framerate" />
+  <img src="https://img.shields.io/badge/Webview-None-critical?style=flat" alt="No Webview" />
+  <img src="https://img.shields.io/badge/Frame_Budget-120_FPS_%C2%B7_8.33ms-success?style=flat" alt="Framerate" />
+  <img src="https://img.shields.io/badge/Automated_benchmarks-vs_Mousepad_%C2%B7_Gedit_%C2%B7_GNOME_Text_Editor-blueviolet?style=flat" alt="Benchmarks" />
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" />
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" width="860" alt="Gopad++ 120 FPS Native Interactive Demo" />
+  <img src="assets/demo.gif" width="880" alt="Gopad++ feature tour: menus, find, replace, go to line, word wrap, tabs, context menus, modals and a 500 MB log search, all rendered on the GPU" />
+</p>
+
+<p align="center">
+  <em>34 s tour, rendered headless from the real UI: in-window menus · find &amp; replace · go to line ·
+  word wrap + zoom · tabs &amp; dirty markers · context menus · modals · 500 MB log + parallel search.</em><br>
+  <a href="assets/demo.mp4">▶ Full-quality MP4 clip (960×680)</a> ·
+  <a href="scripts/bench-editors.py">Benchmark script</a> ·
+  <a href="docs/perf-decisions.md">Performance journal</a>
 </p>
 
 ---
 
-## ⚡ Highlights & Core Architecture
+## Why Gopad++
 
-- **High-Density Compact Ergonomics**:
-  - **22px In-Window Menu Bar**: 100% In-Window OpenGL GPU dropdowns synchronized with GNOME 46 dark palette. Hover switching, instant dismissal, zero external GTK padding.
-  - **24px SVG Micro Toolbar**: 16 vector Lucide icons parsed once via `ui.MustParseSVG` with zero per-frame heap allocations.
-  - **28px Cohesive Single-Pill Tab Bar**: Integrated hover duality (clean view shows dirty dot `●`; hovering dynamically reveals close button `✕`). Tab context menu rendered in-window on OpenGL canvas.
-  - **20px Micro Status Bar**: Microsecond operation latency, line/col, UTF-8, line endings, document size.
-  - **0px Viewport Padding**: 100% of the screen is dedicated to your code.
-- **100% In-Window OpenGL GPU Popovers & Modals**:
-  - **Zero Native GTK Message Boxes**: About Dialog and Unsaved Changes Confirmation Modal are rendered directly on the GPU OpenGL canvas matching GNOME 46 compact dark style.
-  - **Instant Context Menus**: In-window editor right-click menu with zero frame lag (0ms pass consumption) and `PressedOutside()` auto-dismissal.
-- **Single-Instance IPC & Auto-Focus**:
-  - Unix Domain Socket (`$XDG_RUNTIME_DIR/gpad.sock`) forwards opening files from CLI or file manager into new tabs of the running instance in **63.7 µs**.
-  - Automatically restores, unminimizes, and focuses the window to the top view across Wayland and X11.
-- **Zero-Allocation Action & Key Binding Registry**:
-  - Bit-packed `uint32` hash lookup in **24.5 ns/op** with 0 B/op and 0 allocs/op for all shortcuts (`Ctrl+N`, `Ctrl+O`, `Ctrl+S`, `Ctrl+W`, `Ctrl+F`, `Ctrl+H`, `Ctrl+G`, etc.).
-- **Instant 500MB Ingestion & Startup**:
-  - Zero-copy memory mapping (`syscall.Mmap`) loads 50MB in **10.9 µs** (1,300x faster than `os.ReadFile`).
-  - Heavy files (>5MB / 500MB) load asynchronously in background, mounting the tab in **<25 µs** and opening the application in **<10 ms**.
-- **Crash-Resilient Zero-Prompt Session WAL & Shadow Drafts**:
-  - Small drafts persist instantly to an append-only binary WAL (<5 µs dispatch).
-  - Heavy modified files (500MB) automatically persist to isolated shadow drafts (`~/.config/gpad/session/shadows/<id>.draft`) in **16.3 ms** (vs 101.5 ms, **128,000x less RAM**).
-  - 100% of unsaved edits on multi-gigabyte log files are restored on relaunch.
-- **Zero-Lock Parallel Hybrid Search**:
-  - Files < 5MB: Real-time GPU match highlighting (`ct.Match`), scrollbar overview markers, regex, case sensitivity, whole word, replace all in 1 undo transaction.
-  - Files >= 5MB: Background worker pool routes across CPU cores with 1 physical core 100% reserved for 120Hz UI rendering. Search latency on 50MB cuts from **88.2 seconds down to 6.69 ms** (**13,100x speedup**).
+**A text editor should be a tool you forget about.** Gopad++ gives you the compact,
+keyboard-first density of Notepad++ with the frame pacing of a game engine, and it opens the
+files other GUI editors choke on.
 
----
+- **Every frame is a GPU frame.** Menus, toolbars, tabs, popovers, context menus, modals, the
+  find bar and the About box are all drawn on the same OpenGL canvas you type on. No GTK popup
+  windows, no webview, no DOM, no "waiting for the window to repaint".
+- **A 500 MB log file is a normal file.** Gopad++ maps it (`syscall.Mmap`, **10.9 µs**, 392 B/op)
+  instead of reading, mounts the tab instantly, indexes it in the background while the window
+  stays live, and searches it across CPU cores with one core reserved for rendering: **9,603
+  matches over 500 MB in 55.8 ms** in the demo above.
+- **Zero chrome, maximum code.** 22px menu bar, 24px vector toolbar, 28px tab bar (26px
+  single-pill tabs), 20px status bar, **0px viewport margins**. 100% of the rest is your document.
+- **Your unsaved work survives the crash you didn't see coming.** Small drafts stream into an
+  append-only binary WAL (**< 5 µs** UI dispatch); heavy dirty files spill into shadow drafts
+  (**16.3 ms** for a 500 MB buffer, **128,000× less RAM** than the naive path).
+- **One window, always.** Opening a file from the shell or your file manager forwards it into a
+  new tab of the running instance over a Unix socket in **63.7 µs** and raises the window.
+- **No render stalls in the hot paths.** Keyboard dispatch is a bit-packed `uint32` hash lookup
+  at **24.5 ns/op, 0 allocs/op**; an idle frame costs **0.062 ms** — 0.75% of a 120 Hz budget.
 
-## 🥊 Head-to-Head Comparative Benchmarks
-
-Measured empirically on identical hardware (`Intel Core i5-7500 @ 3.40GHz`, `Ubuntu 24.04.5 LTS GNOME 46 Wayland`, 16GB RAM):
-
-### 1. Architectural & Performance Matrix
-
-| Metric / Capability                |        **Gopad++ (gpad)**         |  **Mousepad (XFCE)**   |  **GNOME Text Editor**  |   **Gedit (GNOME)**   |   **VS Code (Electron)**    |
-| ---------------------------------- | :-------------------------------: | :--------------------: | :---------------------: | :-------------------: | :-------------------------: |
-| **UI Rendering Engine**            |  **Direct GPU OpenGL (Purego)**   | GTK3 Software / Cairo  |    GTK4 + Libadwaita    | GTK3 Software / Cairo |   Chromium / Webview DOM    |
-| **Target Framerate**               |    **120 FPS (8.33ms budget)**    |    60 FPS standard     |     60 FPS standard     |    60 FPS standard    |       60 FPS (Vsync)        |
-| **50MB File Ingestion**            |   **11.2 µs** (`syscall.Mmap`)    |        ~280 ms         |         ~450 ms         |        ~320 ms        |          ~1,200 ms          |
-| **500MB Ingestion Latency**        |   **12.4 µs** (`syscall.Mmap`)    |    Blocks UI thread    |    Blocks UI thread     |   Blocks UI thread    |  Warns / File chunk limit   |
-| **Screen Space Efficiency**        | **100% (0px padding, 22px menu)** | Moderate (GNOME title) | Low (Heavy Adwaita CSD) | Moderate (Header bar) | Low (Sidebars, status, DOM) |
-| **Right-Click Menu Latency**       |  **Instant 0ms (In-Window GPU)**  |  OS Native GTK Popup   |   OS Native GTK Popup   |  OS Native GTK Popup  |    Webview context menu     |
-| **Unsaved Crash Protection**       |  **Binary WAL + Shadow Drafts**   |     ❌ No auto WAL     |   Basic session state   | Basic autosave plugin |      Hot exit / backup      |
-| **IPC Forwarding to Existing Tab** | **Unix Socket (63.7 µs + Raise)** |    D-Bus activation    |    D-Bus activation     |   D-Bus activation    |      Node.js IPC pipe       |
-| **Action Shortcut Lookup**         |     **24.5 ns/op (0 allocs)**     |      GAction Map       |       GAction Map       |      GAction Map      | Electron Keyboard Dispatch  |
-
-### 2. File Loading & Memory Footprint Comparison
-
-| Test Scenario               |       **Gopad++**       |    **Mousepad**     |     **Gedit**     | **GNOME Text Editor** |      **VS Code**       |
-| --------------------------- | :---------------------: | :-----------------: | :---------------: | :-------------------: | :--------------------: |
-| **Clean Fresh Idle RAM**    |        133.8 MB         |       45.5 MB       |      63.7 MB      |       143.5 MB        |       ~380.0 MB        |
-| **50MB Log Loaded (RAM)**   |        215.2 MB         | 45.5 MB (on-demand) |      69.7 MB      |       161.7 MB        |       ~650.0 MB        |
-| **50MB Read Throughput**    | **4,675.7 GB/s (Mmap)** |   320 MB/s (I/O)    |  280 MB/s (I/O)   |    220 MB/s (I/O)     |     180 MB/s (V8)      |
-| **UI Freeze on 500MB Open** | **0 ms (Non-blocking)** |  UI Spun / Blocked  | UI Spun / Blocked |   UI Spun / Blocked   | File too large warning |
-
-> **Key Takeaway**: Gopad++ combines the **featherweight startup of native C/GTK editors** with the **fluid GPU acceleration of modern game engines**, while maintaining the **Notepad++ compact density** and **multi-hundred-megabyte log file immunity** that neither Electron nor standard GTK editors can achieve.
+> Not an IDE, and not trying to be. Gopad++ is the fast, compact, always-open editor you keep
+> next to your terminal — the one that never spins up a second browser to show you a log file.
 
 ---
 
-## 📸 Visual Showcase
+## Feature tour
 
 <div align="center">
-  <h3>Main High-Density Editor Viewport</h3>
-  <img src="assets/screenshot-main.png" width="860" alt="Gopad++ Main Editor Viewport" />
-  <p><em>0px viewport margins, 22px in-window menubar, 24px micro vector toolbar, 28px single-pill tabs, and 20px status bar.</em></p>
+  <h3>High-density viewport</h3>
+  <img src="assets/screenshot-main.png" width="880" alt="Gopad++ main editor viewport" />
+  <p><em>0px viewport margins · 22px in-window menu bar · 24px SVG micro toolbar · 28px tab bar · 20px
+  status bar with line/col, encoding, line ending, size, zoom, wrap and microsecond operation latency.</em></p>
 </div>
 
 <br/>
@@ -99,36 +78,127 @@ Measured empirically on identical hardware (`Intel Core i5-7500 @ 3.40GHz`, `Ubu
   <table width="100%">
     <tr>
       <td width="50%" align="center">
-        <h4>In-Window About Gopad++ Modal</h4>
-        <img src="assets/screenshot-about.png" width="420" alt="About Gopad++ Modal" />
-        <p><em>100% In-Window OpenGL GPU Modal (Engine, Host, 120Hz Target, License)</em></p>
+        <h4>100% in-window GPU menus</h4>
+        <img src="assets/screenshot-menubar.png" width="440" alt="In-window menu bar" />
+        <p><em>File · Edit · Search · View · Document · Help — hover-switched popovers drawn on the canvas.</em></p>
       </td>
       <td width="50%" align="center">
-        <h4>Instant In-Window Context Menu</h4>
-        <img src="assets/screenshot-context-menu.png" width="420" alt="In-Window Context Menu" />
-        <p><em>Zero GTK popup window, 0ms frame lag, auto-dismiss on outside click</em></p>
+        <h4>Find with GPU highlighting</h4>
+        <img src="assets/screenshot-find.png" width="440" alt="Find bar with match highlighting" />
+        <p><em>Live matches, case/word/regex toggles, match counter and scrollbar overview markers.</em></p>
       </td>
     </tr>
     <tr>
       <td width="50%" align="center">
-        <h4>High-Speed Integrated Search (Find Bar)</h4>
-        <img src="assets/screenshot-find.png" width="420" alt="Gopad++ Integrated Search Find Bar" />
-        <p><em>GPU match highlighting, regex, case sensitivity, instant navigation</em></p>
+        <h4>Go to line, jump and preview</h4>
+        <img src="assets/screenshot-goto.png" width="440" alt="Go to line bar" />
+        <p><em>Line:column, relative jumps, and a preview of the target line while you type.</em></p>
       </td>
       <td width="50%" align="center">
-        <h4>Crash-Resilient Save Confirmation</h4>
-        <img src="assets/screenshot-confirm-save.png" width="420" alt="In-Window Save Confirmation Modal" />
-        <p><em>In-window OpenGL prompt for unsaved changes before tab closure</em></p>
+        <h4>Word wrap &amp; zoom, one frame</h4>
+        <img src="assets/screenshot-wrap-zoom.png" width="440" alt="Word wrap and zoom" />
+        <p><em>Soft wrap and 8–36pt zoom from the toolbar, the menus or the keyboard; the status bar follows.</em></p>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <h4>Tabs with hover duality</h4>
+        <img src="assets/screenshot-dirty-tabs.png" width="440" alt="Tab bar with dirty marker" />
+        <p><em>One slot per tab: dirty dot <code>●</code> at rest, close <code>✕</code> on hover.</em></p>
+      </td>
+      <td width="50%" align="center">
+        <h4>Per-tab context menu</h4>
+        <img src="assets/screenshot-tab-menu.png" width="440" alt="Tab context menu" />
+        <p><em>Close tab / others / to the right, copy full path — in-window, no native popup.</em></p>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <h4>Instant editor context menu</h4>
+        <img src="assets/screenshot-context-menu.png" width="440" alt="Editor context menu" />
+        <p><em>Right-click lands in the same frame; outside click or Escape dismisses it.</em></p>
+      </td>
+      <td width="50%" align="center">
+        <h4>Crash-resilient close prompt</h4>
+        <img src="assets/screenshot-confirm-save.png" width="440" alt="Unsaved changes modal" />
+        <p><em>Unsaved changes are guarded by an in-window modal — no GTK message box, ever.</em></p>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <h4>Find &amp; replace across the buffer</h4>
+        <img src="assets/screenshot-replace.png" width="440" alt="Find and replace bar" />
+        <p><em>Replace, replace-all, whole-word and regex matching with a live match count.</em></p>
+      </td>
+      <td width="50%" align="center">
+        <h4>About, on the canvas</h4>
+        <img src="assets/screenshot-about.png" width="440" alt="About Gopad++ modal" />
+        <p><em>Even the About box is an in-window GPU modal — no native dialog is ever opened.</em></p>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <h4>500 MB opens in the background</h4>
+        <img src="assets/screenshot-large-loading.png" width="440" alt="Loading a 500 MB log" />
+        <p><em>The tab mounts immediately and the window stays interactive while the buffer is indexed.</em></p>
+      </td>
+      <td width="50%" align="center">
+        <h4>500 MB, 2.4M lines, still yours</h4>
+        <img src="assets/screenshot-large-file.png" width="440" alt="500 MB log open" />
+        <p><em>No "file too large" warning, no truncated view: the whole log, virtualized on the GPU.</em></p>
       </td>
     </tr>
   </table>
 </div>
 
+<br/>
+
+<div align="center">
+  <h4>Zero-lock parallel search over 500 MB</h4>
+  <img src="assets/screenshot-large-search.png" width="880" alt="Parallel search over 500 MB log" />
+  <p><em>Docked search bar for heavy files, matches found across cores on mapped pages, one core kept for the UI.</em></p>
+</div>
+
 ---
 
-## 📊 Benchmark Scoreboard (Empirical Evidence)
+## Benchmarks
 
-Every optimization in Gopad++ is backed by empirical benchmarks executed directly on physical hardware (`Intel Core i5-7500 @ 3.40GHz`, `Ubuntu 24.04.5 LTS`, `Go 1.27.2`):
+### 1. Gopad++ vs other Linux editors (measured on this machine)
+
+`scripts/bench-editors.py` launches each editor headless — idle, then with the same 500 MB access
+log — and samples `/proc` for its startup, memory and file-read time:
+
+| Editor | Start | Idle RSS | 500 MB ingest | RSS with the 500 MB log |
+|---|---:|---:|---:|---:|
+| **Gopad++** | **0.88 s** | 134.0 MB | **0.22 ms** (maps it) | **994.5 MB** |
+| Mousepad | 1.82 s | **57.9 MB** | 482 ms | 1,239.2 MB |
+| Gedit | 0.87 s | 63.3 MB | **>240 s, unfinished** | 489.9 MB (partial) |
+| GNOME Text Editor | 1.23 s | 156.4 MB | **>238 s, unfinished** | 728.8 MB (partial) |
+| VS Code | *not measured: an instance was running* | | | |
+
+How these were measured: `python3 scripts/bench-editors.py` starts one editor at a time, in its own
+process group, on a headless X display (Xvfb, software GL — nothing opens on your desktop) and samples
+`/proc`. **Start** is the last growth of the resident set after launch, which is the editor finishing
+its own startup. **Ingest** is the wall time from the file's read count passing 4 MB to its last
+growth: the time the editor spends reading the log. Gopad++ never reads its file — it maps it — so its
+ingest is the traced `openat → mmap` pair instead. **RSS** is the peak during the 6 s after the read
+phase. Gedit and GNOME Text Editor had still not finished reading the log when the 240 s cap expired,
+so their RSS is a partial load. VS Code was left out because an instance was running: launching it
+would have forwarded the file into that window.
+
+Machine: Intel Core i5-7500, 11 GiB RAM, Ubuntu 24.04.5 LTS (GNOME 46, Wayland), Go 1.27.2.
+File: `scratch/test_500m.log`, 524,288,018 bytes, 2,448,630 lines.
+
+Read it honestly: Gopad++'s idle footprint is the one number it does not win (134 MB against
+Mousepad's 58 MB — it carries a GTK3 shell and an OpenGL canvas), and Mousepad agrees on the
+end state of a huge log (~1.2 GB once it has read it all). What no other editor here does is stay
+usable: Gopad++ has the tab on screen and the whole log searchable while they are still reading it.
+
+### 2. What actually makes it fast (ADR scoreboard)
+
+Every optimization is decided by candidates benchmarked on real hardware
+(`Intel Core i5-7500 @ 3.40GHz`, Ubuntu 24.04.5 LTS, Go 1.27.2) and recorded in
+[docs/perf-decisions.md](docs/perf-decisions.md):
 
 | ADR ID       | Subsystem           | Bottleneck Solved                 | Winner Candidate                              | Key Empirical Metric                                                                 | Status       |
 | ------------ | ------------------- | --------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------ | ------------ |
@@ -147,22 +217,31 @@ Every optimization in Gopad++ is backed by empirical benchmarks executed directl
 | `[PERF-013]` | `internal/keybind`  | Dynamic Key Shortcut Dispatch     | Bit-Packed `uint32` Hash Table                | **24.5 ns/op**, **0 B/op**, **0 allocs/op**                                          | **APPROVED** |
 | `[PERF-014]` | `internal/ui`       | Native OS Menu Clutter            | 100% In-Window OpenGL GPU Popovers & Modals   | **0.27 ms** menubar, **0.24 ms** tab context (<3.3% budget)                          | **APPROVED** |
 
-_For complete benchmark tables and candidate comparisons, see [docs/perf-decisions.md](docs/perf-decisions.md)._
+### 3. Architecture at a glance
+
+| Capability                  | **Gopad++ (gpad)**                    | Mousepad                | Gedit                  | GNOME Text Editor       | VS Code              |
+| --------------------------- | ------------------------------------- | ----------------------- | ---------------------- | ----------------------- | -------------------- |
+| Rendering                   | **Direct OpenGL (purego)**            | GTK3 / Cairo (CPU)      | GTK3 / Cairo (CPU)     | GTK4 + Libadwaita       | Chromium / DOM       |
+| Frame target                | **120 FPS (8.33 ms budget)**          | 60 FPS                  | 60 FPS                 | 60 FPS                  | 60 FPS (vsync)       |
+| Big file strategy           | **mmap + background index**           | read into a buffer      | read into a buffer     | read into a buffer      | refuses/limits       |
+| Screen space                | **100% (0px padding, 22px menu)**     | GNOME title bar         | Header bar             | Heavy Adwaita CSD       | Sidebars + status    |
+| Menus / dialogs             | **In-window GPU popovers & modals**   | Native GTK popups       | Native GTK popups      | Native GTK popups       | Webview menus        |
+| Unsaved crash protection    | **Binary WAL + shadow drafts**        | —                       | autosave plugin        | session state           | hot exit / backup    |
+| Opening a file from a shell | **Unix socket → tab in the open tab** | D-Bus activation        | D-Bus activation       | D-Bus activation        | Node IPC pipe        |
 
 ---
 
-## 🛠️ Installation & Quick Start
+## 🔧 Installation & Quick Start
 
 ### Prerequisites
 
 - Linux (x86_64 or arm64), tested on Ubuntu 24.04 (GNOME 46 Wayland & X11)
-- Go 1.23 or newer
-- OpenGL drivers (`libgl1-mesa-dev`, `libx11-dev` standard on desktop Linux)
+- Go 1.27.2 or newer (the version pinned in `go.mod`)
+- OpenGL drivers (`libgl1-mesa-dev`, `libx11-dev` — standard on desktop Linux)
 
-### Building from Source
+### Building from source
 
 ```bash
-# Clone the repository
 git clone https://github.com/thanhnam2811/gpad.git
 cd gpad
 
@@ -176,29 +255,26 @@ cp ./bin/gpad ~/.local/bin/gpad
 gpad
 ```
 
-### Setting as Default Text Editor on Linux
+### Setting Gopad++ as your default text editor
 
 ```bash
-# Register gpad as the system default for text files
 xdg-mime default gpad.desktop text/plain text/markdown text/x-go text/x-c text/x-c++ text/x-python text/x-sh application/json application/xml
 ```
 
-### Running Tests & Benchmarks
+### Tests, benchmarks and the demo
 
 ```bash
-# Run all unit tests
-go test ./...
+go test ./...                      # unit tests
+go test -race ./...                # race detector (clean)
+go test -bench=. -benchmem -count=5 ./...   # empirical benchmark suite
 
-# Run race detector audit (100% clean)
-go test -race ./...
-
-# Run empirical benchmark suite (count=5)
-go test -bench=. -benchmem -count=5 ./...
+python3 scripts/bench-editors.py   # this machine, Gopad++ vs other installed editors
+go run ./scratch/recorder          # regenerate assets/demo.gif, demo.mp4 and screenshots
 ```
 
 ---
 
-## ⌨️ Keyboard Shortcuts Reference
+## ⌨️ Keyboard Shortcuts
 
 | Shortcut                     | Action             | Description                                            |
 | ---------------------------- | ------------------ | ------------------------------------------------------ |
@@ -216,6 +292,8 @@ go test -bench=. -benchmem -count=5 ./...
 | `F3` / `Shift+F3`            | Next / Prev Match  | Jump to next / previous search match                   |
 | `Ctrl+G`                     | Go to Line         | Jump directly to line:column                           |
 | `Alt+Enter` / `Ctrl+Shift+L` | Select All Matches | Transforms all occurrences into multi-carets           |
+| `Alt+Z`                      | Word Wrap          | Toggle soft wrap                                       |
+| `Ctrl+` `+` / `-` / `0`      | Zoom               | In / out / reset (8–36pt)                              |
 | `Ctrl+Z` / `Ctrl+Y`          | Undo / Redo        | High-speed AVL rope transaction undo                   |
 
 ---
@@ -228,6 +306,8 @@ Gopad++ is developed under the **4-Agent Autonomous Squad Structure** defined in
 - `[Agent-2: Core Systems & Perf Engineer]`: BDD candidate implementations and local empirical benchmarks.
 - `[Agent-3: Native UI & Ergonomics Specialist]`: High-density GNOME 46 OpenGL layout.
 - `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`: Mandatory veto power on race conditions, memory leaks, and unbenchmarked code.
+
+Roadmap and decisions: [docs/roadmap.md](docs/roadmap.md) · [docs/perf-decisions.md](docs/perf-decisions.md) · [docs/workflow.md](docs/workflow.md).
 
 ---
 
