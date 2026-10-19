@@ -29,11 +29,23 @@ func main() {
 
 	application := app.NewApp()
 
+	var mainWin *mygo.Window
+
+	raiseWindow := func() {
+		if mainWin != nil {
+			mainWin.Restore()
+			mainWin.SetAlwaysOnTop(true)
+			mainWin.Focus()
+			mainWin.SetAlwaysOnTop(false)
+		}
+	}
+
 	// 2. Start single-instance listener to accept files from subsequent instances into new tabs
 	listener, err := instance.StartListener(sockPath, func(path string) {
 		_ = application.OpenFile(path)
+		raiseWindow()
 	}, func() {
-		// Window focus event
+		raiseWindow()
 	})
 	if err == nil {
 		defer listener.Close()
@@ -62,7 +74,7 @@ func main() {
 	}
 
 	mygo.App.WhenReady(func() {
-		w := mygo.NewWindow(mygo.WindowOptions{
+		mainWin = mygo.NewWindow(mygo.WindowOptions{
 			Title:   "Gopad++",
 			Width:   960,
 			Height:  680,
@@ -70,10 +82,10 @@ func main() {
 		})
 
 		// Custom application icon on window
-		_ = w.SetIcon(gpadui.GetAppIconPNG())
+		_ = mainWin.SetIcon(gpadui.GetAppIconPNG())
 
 		// Intercept context menus to render 100% in-window using OpenGL GPU
-		w.SetPopupMenuHandler(gui.ShowEditorContextMenu)
+		mainWin.SetPopupMenuHandler(gui.ShowEditorContextMenu)
 	})
 
 	if err := mygo.App.Run(); err != nil {
