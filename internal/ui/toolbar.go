@@ -93,17 +93,33 @@ func (u *UI) renderToolbar(c *ui.Context, t *ui.Theme) {
 		u.renderToolbarSep(c, t)
 
 		// Group 4: View Actions
-		u.renderToolBtn(c, t, "tb-wrap", IconWordWrap, "Toggle Word Wrap", func() {
-			// Toggle wrap on active document if state permits
-			if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
-				// Future wrap toggle hook
+		wrapActive := false
+		if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+			wrapActive = doc.State.IsSoftWrap()
+		}
+		wrapBtn := ui.ButtonBase(c.Key("tb-wrap")).Size(22, 22).Radius(3).Center().FocusRing(false)
+		wrapBtn.Tooltip("Toggle Word Wrap (Alt+Z)")
+		if wrapActive {
+			wrapBtn.Background(t.SurfacePressed)
+		} else if wrapBtn.Hovered() {
+			wrapBtn.Background(t.SurfaceHover)
+		}
+		wrapBtn.Children(func() {
+			color := t.TextMuted
+			if wrapActive {
+				color = t.Accent
 			}
+			ui.Icon(c, IconWordWrap).Size(15, 15).TextColor(color)
 		})
+		if wrapBtn.Clicked() {
+			u.ToggleWordWrap()
+		}
+
 		u.renderToolBtn(c, t, "tb-zoomin", IconZoomIn, "Zoom In (Ctrl++)", func() {
-			// Zoom in
+			u.ZoomIn()
 		})
 		u.renderToolBtn(c, t, "tb-zoomout", IconZoomOut, "Zoom Out (Ctrl+-)", func() {
-			// Zoom out
+			u.ZoomOut()
 		})
 	})
 }

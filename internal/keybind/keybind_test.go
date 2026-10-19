@@ -21,6 +21,24 @@ func TestRegistry_Lookup(t *testing.T) {
 		t.Fatalf("expected ActionFileSaveAs, got %v (ok=%v)", action, ok)
 	}
 
+	// Test Zoom and Wrap shortcuts
+	action, ok = reg.Lookup(ui.Cmd, ui.KeyEqual)
+	if !ok || action != ActionViewZoomIn {
+		t.Fatalf("expected ActionViewZoomIn, got %v", action)
+	}
+	action, ok = reg.Lookup(ui.Cmd, ui.KeyMinus)
+	if !ok || action != ActionViewZoomOut {
+		t.Fatalf("expected ActionViewZoomOut, got %v", action)
+	}
+	action, ok = reg.Lookup(ui.Cmd, ui.Key0)
+	if !ok || action != ActionViewZoomReset {
+		t.Fatalf("expected ActionViewZoomReset, got %v", action)
+	}
+	action, ok = reg.Lookup(ui.Alt, ui.KeyZ)
+	if !ok || action != ActionViewToggleWrap {
+		t.Fatalf("expected ActionViewToggleWrap, got %v", action)
+	}
+
 	// Test non-existent shortcut
 	_, ok = reg.Lookup(ui.Alt, ui.KeyQ)
 	if ok {
@@ -39,6 +57,19 @@ func TestRegistry_ShortcutString(t *testing.T) {
 	str = reg.ShortcutString(ActionFileSaveAs)
 	if str != "Ctrl+Shift+S" {
 		t.Fatalf("expected 'Ctrl+Shift+S', got %q", str)
+	}
+
+	if str := reg.ShortcutString(ActionViewZoomIn); str != "Ctrl++" {
+		t.Fatalf("expected 'Ctrl++', got %q", str)
+	}
+	if str := reg.ShortcutString(ActionViewZoomOut); str != "Ctrl+-" {
+		t.Fatalf("expected 'Ctrl+-', got %q", str)
+	}
+	if str := reg.ShortcutString(ActionViewZoomReset); str != "Ctrl+0" {
+		t.Fatalf("expected 'Ctrl+0', got %q", str)
+	}
+	if str := reg.ShortcutString(ActionViewToggleWrap); str != "Alt+Z" {
+		t.Fatalf("expected 'Alt+Z', got %q", str)
 	}
 }
 

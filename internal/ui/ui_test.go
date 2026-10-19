@@ -172,3 +172,99 @@ func TestAboutInWindowModal(t *testing.T) {
 		t.Fatalf("expected gui.aboutOpen to be false after clicking OK")
 	}
 }
+
+func TestToggleWordWrap(t *testing.T) {
+	application := app.NewApp()
+	doc := application.NewTab("wrap.txt", "This is a very long line that will wrap when soft wrap is enabled.")
+	gui := NewUI(application)
+
+	tester := ui.NewTester(gui.Render, 960, 680)
+	tester.Frame()
+
+	// Initial state: Wrap: Off
+	if doc.State.IsSoftWrap() {
+		t.Fatalf("expected wrap off initially")
+	}
+	if !tester.HasText("Wrap: Off") {
+		t.Fatalf("expected 'Wrap: Off' in status bar, texts: %v", tester.Texts())
+	}
+
+	// Toggle wrap via gui.ToggleWordWrap()
+	gui.ToggleWordWrap()
+	tester.Frame()
+
+	if !doc.State.IsSoftWrap() {
+		t.Fatalf("expected wrap on after toggle")
+	}
+	if !tester.HasText("Wrap: On") {
+		t.Fatalf("expected 'Wrap: On' in status bar, texts: %v", tester.Texts())
+	}
+
+	// Toggle wrap off
+	gui.ToggleWordWrap()
+	tester.Frame()
+
+	if doc.State.IsSoftWrap() {
+		t.Fatalf("expected wrap off after second toggle")
+	}
+	if !tester.HasText("Wrap: Off") {
+		t.Fatalf("expected 'Wrap: Off' in status bar, texts: %v", tester.Texts())
+	}
+}
+
+func TestZoom(t *testing.T) {
+	application := app.NewApp()
+	doc := application.NewTab("zoom.txt", "package main\n")
+	gui := NewUI(application)
+
+	tester := ui.NewTester(gui.Render, 960, 680)
+	tester.Frame()
+
+	// Initial state: 100% zoom
+	if !tester.HasText("100%") {
+		t.Fatalf("expected '100%%' in status bar, texts: %v", tester.Texts())
+	}
+
+	// Zoom in
+	gui.ZoomIn()
+	tester.Frame()
+
+	if gui.fontSize != 14 {
+		t.Fatalf("expected fontSize 14, got %f", gui.fontSize)
+	}
+	if doc.State.Font.Size != 14 {
+		t.Fatalf("expected doc.State.Font.Size 14, got %f", doc.State.Font.Size)
+	}
+	if !tester.HasText("108%") {
+		t.Fatalf("expected '108%%' in status bar, texts: %v", tester.Texts())
+	}
+
+	// Zoom out
+	gui.ZoomOut()
+	tester.Frame()
+
+	if gui.fontSize != 13 {
+		t.Fatalf("expected fontSize 13, got %f", gui.fontSize)
+	}
+	if !tester.HasText("100%") {
+		t.Fatalf("expected '100%%' in status bar, texts: %v", tester.Texts())
+	}
+
+	// Zoom in multiple times and then reset
+	gui.ZoomIn()
+	gui.ZoomIn()
+	gui.ZoomIn()
+	tester.Frame()
+	if gui.fontSize != 16 {
+		t.Fatalf("expected fontSize 16, got %f", gui.fontSize)
+	}
+
+	gui.ZoomReset()
+	tester.Frame()
+	if gui.fontSize != 13 {
+		t.Fatalf("expected fontSize 13 after reset, got %f", gui.fontSize)
+	}
+	if !tester.HasText("100%") {
+		t.Fatalf("expected '100%%' in status bar after reset, texts: %v", tester.Texts())
+	}
+}

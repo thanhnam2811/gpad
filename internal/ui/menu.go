@@ -263,9 +263,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Toggle Soft Wrap",
 					Accelerator: "Alt+Z",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
-							doc.State.SoftWrap = !doc.State.SoftWrap
-						}
+						gui.ToggleWordWrap()
 					},
 				},
 				{
@@ -278,6 +276,28 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 								doc.State.LineNumbers = editor.LineNumbersOff
 							}
 						}
+					},
+				},
+				mygo.Separator(),
+				{
+					Label:       "Zoom In",
+					Accelerator: "CmdOrCtrl+=",
+					Click: func(item *mygo.MenuItem, w *mygo.Window) {
+						gui.ZoomIn()
+					},
+				},
+				{
+					Label:       "Zoom Out",
+					Accelerator: "CmdOrCtrl+-",
+					Click: func(item *mygo.MenuItem, w *mygo.Window) {
+						gui.ZoomOut()
+					},
+				},
+				{
+					Label:       "Reset Zoom",
+					Accelerator: "CmdOrCtrl+0",
+					Click: func(item *mygo.MenuItem, w *mygo.Window) {
+						gui.ZoomReset()
 					},
 				},
 				mygo.Separator(),

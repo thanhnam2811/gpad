@@ -264,6 +264,22 @@ func (st *State) Insert(text string) {
 	st.ed.retry(func() bool { st.ed.paste(text); return true })
 }
 
+// IsSoftWrap reports whether soft wrapping is currently in effect.
+func (st *State) IsSoftWrap() bool {
+	st.ensure()
+	return st.SoftWrap != st.ed.toggledWrap
+}
+
+// ToggleSoftWrap toggles soft wrapping on or off and synchronizes state.
+func (st *State) ToggleSoftWrap() bool {
+	st.ensure()
+	curr := st.IsSoftWrap()
+	st.SoftWrap = !curr
+	st.ed.toggledWrap = false
+	st.ed.needsBuild = true
+	return st.SoftWrap
+}
+
 // Run runs a command as its key would, and reports whether it did
 // something.
 func (st *State) Run(cmd Command) bool {

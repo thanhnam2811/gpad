@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -44,6 +45,7 @@ type UI struct {
 	activeMenu         string // "", "file", "edit", "search", "view", "doc", "help"
 	tabContextMenuOpen bool
 	tabContextMenuIdx  int
+	fontSize           float32
 
 	// In-Window Editor Context Menu
 	editorContextMenu EditorContextMenuState
@@ -61,6 +63,7 @@ func NewUI(a *app.App) *UI {
 		app:         a,
 		keyRegistry: keybind.NewRegistry(),
 		isDark:      detectGnomeDarkMode(),
+		fontSize:    13,
 	}
 
 	// Register close confirmation handler - fallback for programmatic app close
@@ -113,6 +116,57 @@ func detectGnomeDarkMode() bool {
 	return true // Default dark for GNOME modern desktop
 }
 
+const (
+	minEditorFontSize     float32 = 8
+	maxEditorFontSize     float32 = 36
+	defaultEditorFontSize float32 = 13
+)
+
+// ToggleWordWrap toggles soft wrapping on the active editor document.
+func (u *UI) ToggleWordWrap() {
+	doc := u.app.ActiveDocument()
+	if doc == nil || doc.State == nil {
+		return
+	}
+	doc.State.ToggleSoftWrap()
+}
+
+// ZoomIn increases the editor font size.
+func (u *UI) ZoomIn() {
+	if u.fontSize <= 0 {
+		u.fontSize = defaultEditorFontSize
+	}
+	if u.fontSize < maxEditorFontSize {
+		u.fontSize++
+		u.applyFontSize()
+	}
+}
+
+// ZoomOut decreases the editor font size.
+func (u *UI) ZoomOut() {
+	if u.fontSize <= 0 {
+		u.fontSize = defaultEditorFontSize
+	}
+	if u.fontSize > minEditorFontSize {
+		u.fontSize--
+		u.applyFontSize()
+	}
+}
+
+// ZoomReset restores the default editor font size.
+func (u *UI) ZoomReset() {
+	u.fontSize = defaultEditorFontSize
+	u.applyFontSize()
+}
+
+func (u *UI) applyFontSize() {
+	for _, doc := range u.app.Tabs {
+		if doc != nil && doc.State != nil {
+			doc.State.Font.Size = u.fontSize
+		}
+	}
+}
+
 // Render builds the frame on each render cycle.
 func (u *UI) Render(c *ui.Context) {
 	// Theme synchronization with GNOME 46
@@ -162,6 +216,18 @@ func (u *UI) Render(c *ui.Context) {
 	}
 	if c.Shortcut(ui.Alt, ui.KeyEnter) || c.Shortcut(ui.Cmd|ui.Shift, ui.KeyL) {
 		u.SelectAllMatches()
+	}
+	if c.Shortcut(ui.Alt, ui.KeyZ) {
+		u.ToggleWordWrap()
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyEqual) || c.Shortcut(ui.Cmd|ui.Shift, ui.KeyEqual) {
+		u.ZoomIn()
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyMinus) {
+		u.ZoomOut()
+	}
+	if c.Shortcut(ui.Cmd, ui.Key0) {
+		u.ZoomReset()
 	}
 
 	// Main container - 0px margins, occupies full window
@@ -636,8 +702,27 @@ func (u *UI) renderEditor(c *ui.Context) {
 	}
 
 	// Main code editor occupying entire central viewport
-	if doc.State != nil && doc.State.TopPadding == 0 {
+	if doc.State != nil {
+		if doc.State.TopPadding == 0 {
 		doc.State.TopPadding = 4
+	}
+		if u.fontSize > 0 && doc.State.Font.Size != u.fontSize {
+			doc.State.Font.Size = u.fontSize
+		}
+		if doc.State.OnInput == nil {
+			doc.State.OnInput = func(ev ui.InputEvent) bool {
+				if ev.Kind == ui.InputScroll && ev.Mods&ui.Cmd != 0 {
+					if ev.DY < 0 {
+						u.ZoomIn()
+						return true
+					} else if ev.DY > 0 {
+						u.ZoomOut()
+						return true
+					}
+				}
+				return false
+			}
+		}
 	}
 	editor.View(c, doc.State).Fill()
 }
@@ -664,7 +749,15 @@ func (u *UI) renderStatusBar(c *ui.Context, t *ui.Theme) {
 	}
 
 	latUs := u.app.LastOpLatency.Microseconds()
-	statusText := fmt.Sprintf("Ln %d, Col %d  |  %s  |  %s  |  %s  |  Latency: %d µs", line, col, enc, le, sizeStr, latUs)
+	zoomPct := 100
+	if u.fontSize > 0 {
+		zoomPct = int(math.Round(float64(u.fontSize) / float64(defaultEditorFontSize) * 100))
+	}
+	wrapStatus := "Wrap: Off"
+	if doc != nil && doc.State != nil && doc.State.IsSoftWrap() {
+		wrapStatus = "Wrap: On"
+	}
+	statusText := fmt.Sprintf("Ln %d, Col %d  |  %s  |  %s  |  %s  |  %d%%  |  %s  |  Latency: %d µs", line, col, enc, le, sizeStr, zoomPct, wrapStatus, latUs)
 
 	ui.Row(c).FillWidth().Height(20).Background(t.Surface).Padding(1, 8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, statusText).FontSize(11).TextColor(t.TextMuted)

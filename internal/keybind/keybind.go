@@ -41,6 +41,9 @@ const (
 
 	ActionViewToggleWrap     ActionID = "view.toggleWrap"
 	ActionViewToggleLineNums ActionID = "view.toggleLineNumbers"
+	ActionViewZoomIn         ActionID = "view.zoomIn"
+	ActionViewZoomOut        ActionID = "view.zoomOut"
+	ActionViewZoomReset      ActionID = "view.zoomReset"
 	ActionViewFullScreen     ActionID = "view.fullScreen"
 
 	ActionDocConvertLF   ActionID = "doc.convertLF"
@@ -146,6 +149,8 @@ func formatKey(k ui.Key) string {
 		return "Enter"
 	case ui.KeyEscape:
 		return "Esc"
+	case ui.Key0:
+		return "0"
 	case ui.KeySlash:
 		return "/"
 	case ui.KeyEqual:
@@ -212,6 +217,9 @@ func NewRegistry() *Registry {
 
 		{ID: ActionViewToggleWrap, Title: "Toggle Word Wrap", Category: "View", Default: Binding{Mods: ui.Alt, Key: ui.KeyZ}},
 		{ID: ActionViewToggleLineNums, Title: "Toggle Line Numbers", Category: "View"},
+		{ID: ActionViewZoomIn, Title: "Zoom In", Category: "View", Default: Binding{Mods: ui.Cmd, Key: ui.KeyEqual}},
+		{ID: ActionViewZoomOut, Title: "Zoom Out", Category: "View", Default: Binding{Mods: ui.Cmd, Key: ui.KeyMinus}},
+		{ID: ActionViewZoomReset, Title: "Reset Zoom", Category: "View", Default: Binding{Mods: ui.Cmd, Key: ui.Key0}},
 		{ID: ActionViewFullScreen, Title: "Toggle Full Screen", Category: "View", Default: Binding{Mods: 0, Key: ui.KeyF11}},
 
 		{ID: ActionDocConvertLF, Title: "Convert to LF (Unix)", Category: "Document"},

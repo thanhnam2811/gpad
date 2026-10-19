@@ -196,11 +196,13 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 			label: "View",
 			width: 200,
 			content: func() {
-				renderMenuItem(c, t, "word-wrap", "Toggle Word Wrap", u.keyRegistry.ShortcutString(keybind.ActionViewToggleWrap), false, func() {
+				wrapLabel := "Toggle Word Wrap"
+				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil && doc.State.IsSoftWrap() {
+					wrapLabel = "✓ Word Wrap"
+				}
+				renderMenuItem(c, t, "word-wrap", wrapLabel, u.keyRegistry.ShortcutString(keybind.ActionViewToggleWrap), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
-						doc.State.SoftWrap = !doc.State.SoftWrap
-					}
+					u.ToggleWordWrap()
 				})
 				renderMenuItem(c, t, "line-numbers", "Toggle Line Numbers", "", false, func() {
 					u.activeMenu = ""
@@ -211,6 +213,19 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 							doc.State.LineNumbers = editor.LineNumbersOff
 						}
 					}
+				})
+				renderMenuSeparator(c, t)
+				renderMenuItem(c, t, "zoom-in", "Zoom In", u.keyRegistry.ShortcutString(keybind.ActionViewZoomIn), false, func() {
+					u.activeMenu = ""
+					u.ZoomIn()
+				})
+				renderMenuItem(c, t, "zoom-out", "Zoom Out", u.keyRegistry.ShortcutString(keybind.ActionViewZoomOut), false, func() {
+					u.activeMenu = ""
+					u.ZoomOut()
+				})
+				renderMenuItem(c, t, "zoom-reset", "Reset Zoom", u.keyRegistry.ShortcutString(keybind.ActionViewZoomReset), false, func() {
+					u.activeMenu = ""
+					u.ZoomReset()
 				})
 				renderMenuSeparator(c, t)
 				renderMenuItem(c, t, "fullscreen", "Toggle Full Screen", u.keyRegistry.ShortcutString(keybind.ActionViewFullScreen), false, func() {
