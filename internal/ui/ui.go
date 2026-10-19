@@ -10,24 +10,32 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 	"gpad/internal/app"
 	"gpad/internal/buffer"
+	"gpad/internal/keybind"
 	"gpad/internal/search"
 )
 
 // UI represents the native UI renderer.
 type UI struct {
-	app              *app.App
-	isDark           bool
-	themeSet         bool
-	largeFindOpen    bool
-	largeFindQuery   string
-	largeMatchIndex  int
+	app             *app.App
+	keyRegistry     *keybind.Registry
+	isDark          bool
+	themeSet        bool
+	largeFindOpen   bool
+	largeFindQuery  string
+	largeMatchIndex int
+
+	// In-Window Popover Menu states (100% GPU rendered, zero native GTK popup)
+	activeMenu         string // "", "file", "edit", "search", "view", "doc", "help"
+	tabContextMenuOpen bool
+	tabContextMenuIdx  int
 }
 
 // NewUI initializes the UI renderer.
 func NewUI(a *app.App) *UI {
 	u := &UI{
-		app:    a,
-		isDark: detectGnomeDarkMode(),
+		app:         a,
+		keyRegistry: keybind.NewRegistry(),
+		isDark:      detectGnomeDarkMode(),
 	}
 
 	// Register native close confirmation handler
@@ -177,22 +185,39 @@ func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {
 				tabPill.Background(bg)
 			}
 
-			// Tab Context Menu (Right Click)
-			tabPill.ContextMenu(func(m *ui.Menu) {
-				if m.Item("Close Tab").Chosen() {
-					u.app.CloseTab(idx)
-				}
-				if m.Item("Close Other Tabs").Chosen() {
-					u.app.CloseOtherTabs(idx)
-				}
-				if m.Item("Close Tabs to the Right").Chosen() {
-					u.app.CloseTabsToRight(idx)
-				}
-				m.Separator()
-				if m.Item("Copy Full Path").Chosen() {
-					u.app.CopyFilePath(idx)
-				}
+			// In-Window Tab Context Menu (Right Click)
+			if tabPill.RightClicked() {
+				u.tabContextMenuOpen = true
+				u.tabContextMenuIdx = idx
+			}
+
+			isThisTabMenuOpen := u.tabContextMenuOpen && u.tabContextMenuIdx == idx
+			ui.PopoverBase(c, tabPill, &isThisTabMenuOpen, func(panel ui.Element) {
+				panel.Background(t.Surface).Border(1, t.Border).Radius(4).Padding(3, 3).Width(180)
+				ui.Column(c).FillWidth().Gap(1).Children(func() {
+					renderMenuItem(c, t, fmt.Sprintf("tab-close-%d", idx), "Close Tab", u.keyRegistry.ShortcutString(keybind.ActionFileCloseTab), false, func() {
+						u.app.CloseTab(idx)
+						u.tabContextMenuOpen = false
+					})
+					renderMenuItem(c, t, fmt.Sprintf("tab-close-others-%d", idx), "Close Other Tabs", "", false, func() {
+						u.app.CloseOtherTabs(idx)
+						u.tabContextMenuOpen = false
+					})
+					renderMenuItem(c, t, fmt.Sprintf("tab-close-right-%d", idx), "Close Tabs to the Right", "", false, func() {
+						u.app.CloseTabsToRight(idx)
+						u.tabContextMenuOpen = false
+					})
+					renderMenuSeparator(c, t)
+					renderMenuItem(c, t, fmt.Sprintf("tab-copy-path-%d", idx), "Copy Full Path", "", false, func() {
+						u.app.CopyFilePath(idx)
+						u.tabContextMenuOpen = false
+					})
+				})
 			})
+
+			if !isThisTabMenuOpen && u.tabContextMenuOpen && u.tabContextMenuIdx == idx {
+				u.tabContextMenuOpen = false
+			}
 
 			// Content of tab pill
 			var closedClicked bool

@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 
+	"gpad/internal/keybind"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
@@ -12,19 +14,22 @@ import (
 func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 	ui.Row(c.Key("in-window-menubar")).FillWidth().Height(22).Background(t.Surface).Padding(0, 4).Gap(1).AlignItems(ui.Center).Children(func() {
 		// 1. File Menu
-		u.renderMenuButton(c, t, "menu-btn-file", "File", func(m *ui.Menu) {
-			if m.Item("New Tab").Shortcut(ui.Cmd, ui.KeyN).Chosen() {
+		u.renderMenuButton(c, t, "file", "File", 220, func() {
+			renderMenuItem(c, t, "new-tab", "New Tab", u.keyRegistry.ShortcutString(keybind.ActionFileNew), false, func() {
 				u.app.NewTab("", "")
-			}
-			if m.Item("Open File...").Shortcut(ui.Cmd, ui.KeyO).Chosen() {
+				u.activeMenu = ""
+			})
+			renderMenuItem(c, t, "open-file", "Open File...", u.keyRegistry.ShortcutString(keybind.ActionFileOpen), false, func() {
+				u.activeMenu = ""
 				paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 					Title: "Open File - Gopad++",
 				})
 				if err == nil && len(paths) > 0 {
 					_ = u.app.OpenFile(paths[0])
 				}
-			}
-			if m.Item("Save").Shortcut(ui.Cmd, ui.KeyS).Chosen() {
+			})
+			renderMenuItem(c, t, "save", "Save", u.keyRegistry.ShortcutString(keybind.ActionFileSave), false, func() {
+				u.activeMenu = ""
 				doc := u.app.ActiveDocument()
 				if doc != nil {
 					if doc.Path == "" {
@@ -39,8 +44,9 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 						_ = u.app.SaveActiveFile()
 					}
 				}
-			}
-			if m.Item("Save As...").Shortcut(ui.Cmd|ui.Shift, ui.KeyS).Chosen() {
+			})
+			renderMenuItem(c, t, "save-as", "Save As...", u.keyRegistry.ShortcutString(keybind.ActionFileSaveAs), false, func() {
+				u.activeMenu = ""
 				doc := u.app.ActiveDocument()
 				if doc != nil {
 					defaultPath := doc.Path
@@ -55,100 +61,146 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 						_ = u.app.SaveActiveFileAs(path)
 					}
 				}
-			}
-			m.Separator()
-			if m.Item("Close Tab").Shortcut(ui.Cmd, ui.KeyW).Chosen() {
+			})
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "close-tab", "Close Tab", u.keyRegistry.ShortcutString(keybind.ActionFileCloseTab), false, func() {
 				u.app.CloseTab(u.app.ActiveTab)
-			}
-			if m.Item("Close Other Tabs").Chosen() {
+				u.activeMenu = ""
+			})
+			renderMenuItem(c, t, "close-other-tabs", "Close Other Tabs", "", false, func() {
 				u.app.CloseOtherTabs(u.app.ActiveTab)
-			}
-			if m.Item("Close Tabs to the Right").Chosen() {
+				u.activeMenu = ""
+			})
+			renderMenuItem(c, t, "close-tabs-right", "Close Tabs to the Right", "", false, func() {
 				u.app.CloseTabsToRight(u.app.ActiveTab)
-			}
-			if m.Item("Close All Tabs").Chosen() {
+				u.activeMenu = ""
+			})
+			renderMenuItem(c, t, "close-all-tabs", "Close All Tabs", "", false, func() {
 				u.app.CloseAllTabs()
-			}
-			m.Separator()
-			if m.Item("Exit").Shortcut(ui.Cmd, ui.KeyQ).Chosen() {
+				u.activeMenu = ""
+			})
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "exit", "Exit", u.keyRegistry.ShortcutString(keybind.ActionFileExit), false, func() {
+				u.activeMenu = ""
 				mygo.App.Quit()
-			}
+			})
 		})
 
 		// 2. Edit Menu
-		u.renderMenuButton(c, t, "menu-btn-edit", "Edit", func(m *ui.Menu) {
-			if m.Item("Undo").Shortcut(ui.Cmd, ui.KeyZ).Chosen() {
+		u.renderMenuButton(c, t, "edit", "Edit", 210, func() {
+			renderMenuItem(c, t, "undo", "Undo", u.keyRegistry.ShortcutString(keybind.ActionEditUndo), false, func() {
+				u.activeMenu = ""
 				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
 					doc.State.Run(editor.Undo)
 				}
-			}
-			if m.Item("Redo").Shortcut(ui.Cmd, ui.KeyY).Chosen() {
+			})
+			renderMenuItem(c, t, "redo", "Redo", u.keyRegistry.ShortcutString(keybind.ActionEditRedo), false, func() {
+				u.activeMenu = ""
 				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
 					doc.State.Run(editor.Redo)
 				}
-			}
-			m.Separator()
-			if m.Item("Cut").Shortcut(ui.Cmd, ui.KeyX).Chosen() {
+			})
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "cut", "Cut", u.keyRegistry.ShortcutString(keybind.ActionEditCut), false, func() {
+				u.activeMenu = ""
 				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
 					doc.State.Run(editor.Cut)
 				}
-			}
-			if m.Item("Copy").Shortcut(ui.Cmd, ui.KeyC).Chosen() {
+			})
+			renderMenuItem(c, t, "copy", "Copy", u.keyRegistry.ShortcutString(keybind.ActionEditCopy), false, func() {
+				u.activeMenu = ""
 				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
 					doc.State.Run(editor.Copy)
 				}
-			}
-			if m.Item("Paste").Shortcut(ui.Cmd, ui.KeyV).Chosen() {
+			})
+			renderMenuItem(c, t, "paste", "Paste", u.keyRegistry.ShortcutString(keybind.ActionEditPaste), false, func() {
+				u.activeMenu = ""
 				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
 					doc.State.Run(editor.Paste)
 				}
-			}
-			if m.Item("Select All").Shortcut(ui.Cmd, ui.KeyA).Chosen() {
+			})
+			renderMenuItem(c, t, "select-all", "Select All", u.keyRegistry.ShortcutString(keybind.ActionEditSelectAll), false, func() {
+				u.activeMenu = ""
 				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
 					doc.State.Run(editor.SelectAll)
 				}
-			}
+			})
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "duplicate-line", "Duplicate Line", u.keyRegistry.ShortcutString(keybind.ActionEditDupLine), false, func() {
+				u.activeMenu = ""
+				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					doc.State.Run(editor.DuplicateLinesDown)
+				}
+			})
+			renderMenuItem(c, t, "delete-line", "Delete Line", u.keyRegistry.ShortcutString(keybind.ActionEditDelLine), false, func() {
+				u.activeMenu = ""
+				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					doc.State.Run(editor.DeleteLine)
+				}
+			})
+			renderMenuItem(c, t, "toggle-comment", "Toggle Line Comment", u.keyRegistry.ShortcutString(keybind.ActionEditToggleComment), false, func() {
+				u.activeMenu = ""
+				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					doc.State.Run(editor.ToggleComment)
+				}
+			})
 		})
 
 		// 3. Search Menu
-		u.renderMenuButton(c, t, "menu-btn-search", "Search", func(m *ui.Menu) {
-			if m.Item("Find...").Shortcut(ui.Cmd, ui.KeyF).Chosen() {
+		u.renderMenuButton(c, t, "search", "Search", 220, func() {
+			renderMenuItem(c, t, "find", "Find...", u.keyRegistry.ShortcutString(keybind.ActionSearchFind), false, func() {
+				u.activeMenu = ""
 				u.OpenFind()
-			}
-			if m.Item("Replace...").Shortcut(ui.Cmd, ui.KeyH).Chosen() {
+			})
+			renderMenuItem(c, t, "replace", "Replace...", u.keyRegistry.ShortcutString(keybind.ActionSearchReplace), false, func() {
+				u.activeMenu = ""
 				u.OpenFindReplace()
-			}
-			if m.Item("Find Next").Shortcut(0, ui.KeyF3).Chosen() {
+			})
+			renderMenuItem(c, t, "find-next", "Find Next", u.keyRegistry.ShortcutString(keybind.ActionSearchFindNext), false, func() {
+				u.activeMenu = ""
 				u.FindNext()
-			}
-			if m.Item("Find Previous").Shortcut(ui.Shift, ui.KeyF3).Chosen() {
+			})
+			renderMenuItem(c, t, "find-prev", "Find Previous", u.keyRegistry.ShortcutString(keybind.ActionSearchFindPrev), false, func() {
+				u.activeMenu = ""
 				u.FindPrevious()
-			}
-			m.Separator()
-			if m.Item("Go to Line...").Shortcut(ui.Cmd, ui.KeyG).Chosen() {
+			})
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "goto-line", "Go to Line...", u.keyRegistry.ShortcutString(keybind.ActionSearchGoToLine), false, func() {
+				u.activeMenu = ""
 				u.GoToLine()
-			}
-			if m.Item("Select All Matches").Shortcut(ui.Alt, ui.KeyEnter).Chosen() {
+			})
+			renderMenuItem(c, t, "select-matches", "Select All Matches", u.keyRegistry.ShortcutString(keybind.ActionSearchSelectMatches), false, func() {
+				u.activeMenu = ""
 				u.SelectAllMatches()
-			}
+			})
 		})
 
 		// 4. View Menu
-		u.renderMenuButton(c, t, "menu-btn-view", "View", func(m *ui.Menu) {
-			if m.Item("Toggle Word Wrap").Chosen() {
-				// Wrap toggle
-			}
-			m.Separator()
-			if m.Item("Zoom In").Shortcut(ui.Cmd, ui.KeyEqual).Chosen() {
-				// Zoom in
-			}
-			if m.Item("Zoom Out").Shortcut(ui.Cmd, ui.KeyMinus).Chosen() {
-				// Zoom out
-			}
+		u.renderMenuButton(c, t, "view", "View", 200, func() {
+			renderMenuItem(c, t, "word-wrap", "Toggle Word Wrap", u.keyRegistry.ShortcutString(keybind.ActionViewToggleWrap), false, func() {
+				u.activeMenu = ""
+				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					doc.State.SoftWrap = !doc.State.SoftWrap
+				}
+			})
+			renderMenuItem(c, t, "line-numbers", "Toggle Line Numbers", "", false, func() {
+				u.activeMenu = ""
+				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc.State.LineNumbers == editor.LineNumbersOff {
+						doc.State.LineNumbers = editor.LineNumbersOn
+					} else {
+						doc.State.LineNumbers = editor.LineNumbersOff
+					}
+				}
+			})
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "fullscreen", "Toggle Full Screen", u.keyRegistry.ShortcutString(keybind.ActionViewFullScreen), false, func() {
+				u.activeMenu = ""
+			})
 		})
 
 		// 5. Document Menu
-		u.renderMenuButton(c, t, "menu-btn-doc", "Document", func(m *ui.Menu) {
+		u.renderMenuButton(c, t, "doc", "Document", 220, func() {
 			doc := u.app.ActiveDocument()
 			lineEnding := "Line Ending: LF"
 			encoding := "Encoding: UTF-8"
@@ -156,35 +208,80 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 				lineEnding = fmt.Sprintf("Line Ending: %s", doc.LineEndingDesc())
 				encoding = fmt.Sprintf("Encoding: %s", doc.Encoding)
 			}
-			m.Item(encoding).Disabled(true)
-			m.Item(lineEnding).Disabled(true)
-			m.Separator()
-			if m.Item("Copy Document Path").Chosen() {
+			renderMenuItem(c, t, "conv-lf", "Convert to LF (Unix)", "", false, func() {
+				u.activeMenu = ""
+				if doc != nil {
+					doc.CRLF = false
+				}
+			})
+			renderMenuItem(c, t, "conv-crlf", "Convert to CRLF (Windows)", "", false, func() {
+				u.activeMenu = ""
+				if doc != nil {
+					doc.CRLF = true
+				}
+			})
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "info-enc", encoding, "", true, nil)
+			renderMenuItem(c, t, "info-le", lineEnding, "", true, nil)
+			renderMenuSeparator(c, t)
+			renderMenuItem(c, t, "copy-doc-path", "Copy Document Path", "", false, func() {
+				u.activeMenu = ""
 				u.app.CopyFilePath(u.app.ActiveTab)
-			}
+			})
 		})
 
 		// 6. Help Menu
-		u.renderMenuButton(c, t, "menu-btn-help", "Help", func(m *ui.Menu) {
-			if m.Item("About Gopad++").Chosen() {
+		u.renderMenuButton(c, t, "help", "Help", 190, func() {
+			renderMenuItem(c, t, "about", "About Gopad++", "", false, func() {
+				u.activeMenu = ""
 				_, _ = mygo.Dialog.Message(mygo.MessageOptions{
 					Title:   "About Gopad++",
 					Message: "Gopad++ (gpad) v0.1.0-alpha",
 					Detail:  "A high-density native text editor for Linux (GNOME 46) written in Go.\nOpenGL GPU Rendering • Strictly Zero Webview • Notepad++ Ergonomics",
 					Type:    mygo.MessageInfo,
 				})
-			}
+			})
 		})
 	})
 }
 
-func (u *UI) renderMenuButton(c *ui.Context, t *ui.Theme, key, label string, build func(m *ui.Menu)) {
-	btn := ui.ButtonBase(c.Key(key)).Height(20).Padding(1, 7).Radius(3).FocusRing(false).AlignItems(ui.Center)
-	if btn.Hovered() {
+func (u *UI) renderMenuButton(c *ui.Context, t *ui.Theme, menuID, label string, width float32, build func()) {
+	isOpen := u.activeMenu == menuID
+	btn := ui.ButtonBase(c.Key("menu-btn-"+menuID)).Height(20).Padding(1, 7).Radius(3).FocusRing(false).AlignItems(ui.Center)
+
+	// Visual highlight on hover or when open
+	if isOpen || btn.Hovered() {
 		btn.Background(t.SurfaceHover)
 	}
+
 	btn.Children(func() {
 		ui.Text(c, label).FontSize(11).TextColor(t.Text)
 	})
-	btn.Menu(build)
+
+	// Toggle on click
+	if btn.Clicked() {
+		if isOpen {
+			u.activeMenu = ""
+		} else {
+			u.activeMenu = menuID
+		}
+	}
+
+	// Desktop menu behavior: switch active menu when hovering over another button
+	if u.activeMenu != "" && !isOpen && btn.Hovered() {
+		u.activeMenu = menuID
+	}
+
+	// In-Window OpenGL Popover Menu (0 native GTK windows)
+	ui.PopoverBase(c, btn, &isOpen, func(panel ui.Element) {
+		panel.Background(t.Surface).Border(1, t.Border).Radius(4).Padding(3, 3).Width(width)
+		ui.Column(c).FillWidth().Gap(1).Children(func() {
+			build()
+		})
+	})
+
+	// If closed externally (Escape or click outside), sync activeMenu state
+	if !isOpen && u.activeMenu == menuID {
+		u.activeMenu = ""
+	}
 }

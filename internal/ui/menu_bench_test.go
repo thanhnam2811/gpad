@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"gpad/internal/app"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func BenchmarkUI_Menu_Candidate_A_DynamicRebuild(b *testing.B) {
@@ -28,5 +30,35 @@ func BenchmarkUI_Menu_Candidate_B_StaticCachedMenu(b *testing.B) {
 		// Cached menu inspection and dispatch
 		items := menu.Items()
 		_ = items
+	}
+}
+
+func BenchmarkUI_InWindowPopoverMenu_RenderOpen(b *testing.B) {
+	application := app.NewApp()
+	gui := NewUI(application)
+	gui.activeMenu = "file" // Menu popup actively rendered in OpenGL
+
+	tester := ui.NewTester(gui.Render, 960, 680)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		tester.Frame()
+	}
+}
+
+func BenchmarkUI_InWindowTabContextMenu_RenderOpen(b *testing.B) {
+	application := app.NewApp()
+	application.NewTab("main.go", "package main\n")
+	gui := NewUI(application)
+	gui.tabContextMenuOpen = true
+	gui.tabContextMenuIdx = 0
+
+	tester := ui.NewTester(gui.Render, 960, 680)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		tester.Frame()
 	}
 }
