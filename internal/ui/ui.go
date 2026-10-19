@@ -636,6 +636,9 @@ func (u *UI) renderEditor(c *ui.Context) {
 	}
 
 	// Main code editor occupying entire central viewport
+	if doc.State != nil && doc.State.TopPadding == 0 {
+		doc.State.TopPadding = 4
+	}
 	editor.View(c, doc.State).Fill()
 }
 

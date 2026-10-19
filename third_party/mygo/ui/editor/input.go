@@ -138,7 +138,7 @@ func commandEdits(c Command) bool {
 
 // toContent maps a point of the element to the content.
 func (ed *editor) toContent(x, y float32) (float32, float64) {
-	return x - ed.textX + ed.scrollX, float64(y) + ed.scrollY
+	return x - ed.textX + ed.scrollX, float64(y-ed.o.topPad) + ed.scrollY
 }
 
 // region is what part of the editor a point of it is over.
@@ -542,7 +542,7 @@ func (ed *editor) gutterPress(ev ui.InputEvent) bool {
 }
 
 // foldX is where the fold markers are in the gutter.
-func (ed *editor) foldX() float32 { return ed.gutterW - ed.view.lineHeight*0.8 - 4 }
+func (ed *editor) foldX() float32 { return ed.gutterW - ed.view.lineHeight*0.5 - 4 }
 
 // blockAt returns the block at height y of the content, and its box in
 // the element.
@@ -554,14 +554,14 @@ func (ed *editor) blockAt(y float64) (*block, ui.Rect, bool) {
 	top := g.top
 	for i := range above {
 		if y >= top && y < top+float64(above[i].height) {
-			return &above[i], ui.Rect{X: 0, Y: float32(top - ed.scrollY), W: ed.r.W, H: above[i].height}, true
+			return &above[i], ui.Rect{X: 0, Y: float32(top-ed.scrollY) + ed.o.topPad, W: ed.r.W, H: above[i].height}, true
 		}
 		top += float64(above[i].height)
 	}
 	top = g.below
 	for i := range below {
 		if y >= top && y < top+float64(below[i].height) {
-			return &below[i], ui.Rect{X: 0, Y: float32(top - ed.scrollY), W: ed.r.W, H: below[i].height}, true
+			return &below[i], ui.Rect{X: 0, Y: float32(top-ed.scrollY) + ed.o.topPad, W: ed.r.W, H: below[i].height}, true
 		}
 		top += float64(below[i].height)
 	}
@@ -774,7 +774,7 @@ func (ed *editor) BoundsForRange(r ui.TextInputRange) (ui.Rect, ui.TextInputRang
 		return ui.Rect{}, r, false
 	}
 	x := ed.textX + cr.X - ed.scrollX
-	y := float32(float64(cr.Y) - ed.scrollY)
+	y := float32(float64(cr.Y)-ed.scrollY) + ed.o.topPad
 	if y+cr.H < 0 || y > ed.viewH {
 		return ui.Rect{}, r, false
 	}

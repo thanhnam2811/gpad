@@ -102,8 +102,9 @@ func (ed *editor) paint(p *ui.Painter, r ui.Rect) {
 	// The lines in view: those the window shows of the element, for an
 	// editor as high as its content.
 	clip := p.Visible()
-	y0 := ed.scrollY + float64(max(0, clip.Y-r.Y))
-	y1 := ed.scrollY + float64(min(r.H, clip.Y+clip.H-r.Y))
+	topPad := ed.o.topPad
+	y0 := ed.scrollY + float64(max(0, clip.Y-(r.Y+topPad)))
+	y1 := ed.scrollY + float64(min(r.H-topPad, clip.Y+clip.H-(r.Y+topPad)))
 	var f frame
 	f.first, f.last = ed.visibleLines(y0, y1)
 	ed.shown = [2]int{f.first, f.last}
@@ -127,7 +128,7 @@ func (ed *editor) paint(p *ui.Painter, r ui.Rect) {
 		f.caretsOn = true
 	}
 	ed.paintBlocks(p, r, &f)
-	text := ui.Rect{X: r.X + ed.gutterW, Y: r.Y, W: r.W - ed.gutterW, H: r.H}
+	text := ui.Rect{X: r.X + ed.gutterW, Y: r.Y + topPad, W: r.W - ed.gutterW, H: r.H - topPad}
 	p.Clip(text, 0, func() {
 		ed.paintLines(p, r, &f)
 	})
@@ -231,7 +232,7 @@ func (ed *editor) paintLines(p *ui.Painter, r ui.Rect, f *frame) {
 	v := &ed.view
 	h := &v.heights
 	if ed.view.text.Len() == 0 && ed.o.placeholder != "" {
-		y := r.Y + float32(-ed.scrollY)
+		y := r.Y + ed.o.topPad + float32(-ed.scrollY)
 		l := v.shaped.get(ed.o.placeholder, v.style)
 		row := rowLayout{pieces: []rowPiece{{to: len(ed.o.placeholder), l: l, ascii: isASCII(ed.o.placeholder), width: l.Width}}, to: len(ed.o.placeholder)}
 		cl := &lineLayout{disp: ed.o.placeholder}
@@ -293,7 +294,7 @@ func (ed *editor) paintBlock(p *ui.Painter, r ui.Rect, b *block, top float64) {
 	if ed.o.decor == nil {
 		return
 	}
-	br := ui.Rect{X: r.X, Y: r.Y + float32(top-ed.scrollY), W: r.W, H: b.height}
+	br := ui.Rect{X: r.X, Y: r.Y + ed.o.topPad + float32(top-ed.scrollY), W: r.W, H: b.height}
 	if br.Y > p.Visible().Y+p.Visible().H || br.Y+br.H < p.Visible().Y {
 		return
 	}
@@ -322,7 +323,7 @@ func (ed *editor) paintLine(p *ui.Painter, r ui.Rect, f *frame, line int, g line
 	v.colorsOf(l, &f.colors)
 	for ri := range l.rows {
 		row := &l.rows[ri]
-		y := r.Y + float32(g.rows-ed.scrollY) + float32(ri)*lh
+		y := r.Y + ed.o.topPad + float32(g.rows-ed.scrollY) + float32(ri)*lh
 		if y > p.Visible().Y+p.Visible().H || y+lh < p.Visible().Y {
 			continue
 		}
@@ -616,13 +617,14 @@ func (ed *editor) paintGutter(p *ui.Painter, r ui.Rect, f *frame) {
 	ct := ed.theme
 	h := &v.heights
 	lh := v.lineHeight
-	gutter := ui.Rect{X: r.X, Y: r.Y, W: ed.gutterW, H: r.H}
+	topPad := ed.o.topPad
+	gutter := ui.Rect{X: r.X, Y: r.Y + topPad, W: ed.gutterW, H: r.H - topPad}
 	numbersOn := ed.numbersOn()
 	cur := v.text.LineOf(ed.primary().head)
 	p.Clip(gutter, 0, func() {
-		numRight := r.X + ed.gutterW - 4 - v.charWidth*0.5
+		numRight := r.X + ed.gutterW - 4 - v.charWidth*0.4
 		if ed.o.folding && ed.o.decor == nil {
-			numRight -= lh * 0.8
+			numRight -= lh * 0.5
 		}
 		if ed.gitDiff != nil {
 			numRight -= 6
@@ -633,7 +635,7 @@ func (ed *editor) paintGutter(p *ui.Painter, r ui.Rect, f *frame) {
 			if g.hidden {
 				continue
 			}
-			y := r.Y + float32(g.rows-ed.scrollY)
+			y := r.Y + topPad + float32(g.rows-ed.scrollY)
 			rowsH := float32(g.below - g.rows)
 			var style lineLook
 			if ed.o.decor != nil {
@@ -674,7 +676,7 @@ func (ed *editor) paintGutter(p *ui.Painter, r ui.Rect, f *frame) {
 			// Change bars.
 			barX := r.X + ed.gutterW - 4 - 3
 			if ed.o.folding && ed.o.decor == nil {
-				barX -= lh * 0.8
+				barX -= lh * 0.5
 			}
 			if ed.gitDiff != nil {
 				switch ed.gitDiff.status(line) {
@@ -697,7 +699,7 @@ func (ed *editor) paintGutter(p *ui.Painter, r ui.Rect, f *frame) {
 				folded := ed.isFolded(line)
 				hovered := ed.pointerIn && ed.pointer.X < ed.gutterW
 				if folded || hovered && ed.foldable(line) {
-					cx, cy := r.X+ed.gutterW-4-lh*0.4, y+lh/2
+					cx, cy := r.X+ed.gutterW-4-lh*0.25, y+lh/2
 					d := lh * 0.16
 					var path ui.Path
 					if folded {
@@ -714,6 +716,8 @@ func (ed *editor) paintGutter(p *ui.Painter, r ui.Rect, f *frame) {
 			}
 		}
 	})
+	// Vertical divider between gutter and editor text
+	p.Fill(ui.Rect{X: r.X + ed.gutterW - 1, Y: r.Y + topPad, W: 1, H: r.H - topPad}, p.Theme().Border, 0)
 }
 
 // paintBar draws a diff's change bar: solid for additions, striped for

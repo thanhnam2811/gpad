@@ -70,6 +70,8 @@ type options struct {
 	sharedScroll *sharedScroll
 	// signs leaves room for a diff's + and - before the text.
 	signs bool
+	// topPad is the gap in DIPs between top of editor and line 1.
+	topPad float32
 }
 
 // sharedScroll is the vertical scroll several editors share.
@@ -610,10 +612,10 @@ func (ed *editor) gutterWidth() float32 {
 	w := float32(0)
 	if ed.numbersOn() {
 		digits := max(ed.o.minDigits, len(strconv.Itoa(v.text.LineCount())))
-		w += float32(digits)*v.charWidth + v.charWidth*1.5
+		w += float32(digits)*v.charWidth + v.charWidth*0.8
 	}
 	if ed.o.folding && ed.o.decor == nil {
-		w += v.lineHeight * 0.8
+		w += v.lineHeight * 0.5
 	}
 	if ed.o.diffBase != nil {
 		w += 6

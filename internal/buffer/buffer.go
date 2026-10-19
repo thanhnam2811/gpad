@@ -35,7 +35,8 @@ func NewDocument(id, title, content string, path string) *Document {
 	}
 
 	st := &editor.State{
-		Buffer: buf,
+		Buffer:     buf,
+		TopPadding: 4,
 	}
 
 	doc := &Document{
@@ -57,6 +58,9 @@ func NewDocument(id, title, content string, path string) *Document {
 func (d *Document) SetBufferReady(buf *editor.Buffer, st *editor.State) {
 	d.mu.Lock()
 	d.Buffer = buf
+	if st != nil && st.TopPadding == 0 {
+		st.TopPadding = 4
+	}
 	d.State = st
 	d.Loading = false
 	if buf != nil {

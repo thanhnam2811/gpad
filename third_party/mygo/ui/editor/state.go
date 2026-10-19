@@ -58,6 +58,9 @@ type State struct {
 	// FitContent makes the editor as high as its lines, to show in a
 	// scroll view or a list, rather than scrolling them itself.
 	FitContent bool
+	// TopPadding adds a gap in DIPs between the top edge of the editor and
+	// the first line. 4 by default; set to -1 for 0.
+	TopPadding float32
 	// Placeholder shows while the buffer is empty.
 	Placeholder string
 	// Label names the editor for assistive technology.
@@ -197,9 +200,9 @@ func (st *State) options() options {
 		autoClose: !st.NoAutoClose, folding: !st.NoFolding, activeLine: !st.NoActiveLine, cursorShape: st.CursorShape, fitContent: st.FitContent,
 		placeholder: st.Placeholder, label: st.Label, theme: st.Theme, bindings: st.Bindings, gutterMarks: st.GutterMarks,
 		backgrounds: st.LineBackgrounds, diffBase: st.DiffBase, onCompletion: st.OnCompletion, onHover: st.OnHover, onDefinition: st.OnDefinition,
-		onGutterClick: st.OnGutterClick, contextMenu: st.ContextMenu, onInput: st.OnInput, noInputMethod: st.NoInputMethod, minDigits: 3,
+		onGutterClick: st.OnGutterClick, contextMenu: st.ContextMenu, onInput: st.OnInput, noInputMethod: st.NoInputMethod, minDigits: 2,
 		renderFindBar: st.RenderFindBar, renderGoToLine: st.RenderGoToLine,
-		renderCompletions: st.RenderCompletions, renderHover: st.RenderHover,
+		renderCompletions: st.RenderCompletions, renderHover: st.RenderHover, topPad: st.TopPadding,
 	}
 }
 
