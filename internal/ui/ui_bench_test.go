@@ -6,11 +6,10 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"gpad/internal/app"
 )
 
 func BenchmarkUI_RenderSteadyFrame(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	application.NewTab("main.go", "package main\n\nfunc main() {\n\tprintln(\"Hello Gopad++\")\n}\n")
 	gui := NewUI(application)
 
@@ -23,7 +22,7 @@ func BenchmarkUI_RenderSteadyFrame(b *testing.B) {
 }
 
 func BenchmarkUI_RenderTypingFrame(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	doc := application.NewTab("typing.txt", "Initial line 1\nInitial line 2\n")
 	gui := NewUI(application)
 
@@ -38,7 +37,7 @@ func BenchmarkUI_RenderTypingFrame(b *testing.B) {
 }
 
 func BenchmarkUI_RenderSwitchTabFrame(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	for i := 1; i <= 5; i++ {
 		application.NewTab(fmt.Sprintf("tab_%d.go", i), fmt.Sprintf("package p%d\n// line 2\n// line 3\n", i))
 	}
@@ -54,7 +53,7 @@ func BenchmarkUI_RenderSwitchTabFrame(b *testing.B) {
 }
 
 func BenchmarkUI_RenderLargeDocumentFrame(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	var codeBuilder strings.Builder
 	for i := 1; i <= 10000; i++ {
 		codeBuilder.WriteString(fmt.Sprintf("func fn%d() { println(%d) }\n", i, i))
@@ -71,7 +70,7 @@ func BenchmarkUI_RenderLargeDocumentFrame(b *testing.B) {
 }
 
 func BenchmarkUI_TabBar_Candidate_A_DisconnectedButtons(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	for i := 1; i <= 8; i++ {
 		application.NewTab(fmt.Sprintf("doc_%d.go", i), "package main\n")
 	}
@@ -112,7 +111,7 @@ func BenchmarkUI_TabBar_Candidate_A_DisconnectedButtons(b *testing.B) {
 }
 
 func BenchmarkUI_TabBar_Candidate_B_CohesiveSinglePill(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	for i := 1; i <= 8; i++ {
 		application.NewTab(fmt.Sprintf("doc_%d.go", i), "package main\n")
 	}
@@ -198,7 +197,7 @@ func BenchmarkUI_TabBar_Candidate_B_CohesiveSinglePill(b *testing.B) {
 }
 
 func BenchmarkUI_Search_Candidate_A_CustomSearchBar(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	var codeBuilder strings.Builder
 	for i := 1; i <= 1000; i++ {
 		codeBuilder.WriteString(fmt.Sprintf("func fn%d() { println(\"test pattern %d\") }\n", i, i))
@@ -227,7 +226,7 @@ func BenchmarkUI_Search_Candidate_A_CustomSearchBar(b *testing.B) {
 }
 
 func BenchmarkUI_Search_Candidate_B_NativeEditorFindBar(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	var codeBuilder strings.Builder
 	for i := 1; i <= 1000; i++ {
 		codeBuilder.WriteString(fmt.Sprintf("func fn%d() { println(\"test pattern %d\") }\n", i, i))
@@ -268,7 +267,7 @@ func BenchmarkUI_Toolbar_Candidate_A_EmojiStringRendering(b *testing.B) {
 }
 
 func BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	gui := NewUI(application)
 
 	renderSVG := func(c *ui.Context) {
@@ -284,7 +283,7 @@ func BenchmarkUI_Toolbar_Candidate_B_SVGVectorRendering(b *testing.B) {
 }
 
 func BenchmarkUI_MenuBar_Candidate_B_InWindowCompact(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	gui := NewUI(application)
 
 	renderMenu := func(c *ui.Context) {

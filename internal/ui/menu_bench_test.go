@@ -3,13 +3,11 @@ package ui
 import (
 	"testing"
 
-	"gpad/internal/app"
-
 	"github.com/egoist/mygo/ui"
 )
 
 func BenchmarkUI_Menu_Candidate_A_DynamicRebuild(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	gui := NewUI(application)
 
 	b.ResetTimer()
@@ -21,7 +19,7 @@ func BenchmarkUI_Menu_Candidate_A_DynamicRebuild(b *testing.B) {
 }
 
 func BenchmarkUI_Menu_Candidate_B_StaticCachedMenu(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	gui := NewUI(application)
 	menu := BuildAppMenu(application, gui, nil)
 
@@ -34,7 +32,7 @@ func BenchmarkUI_Menu_Candidate_B_StaticCachedMenu(b *testing.B) {
 }
 
 func BenchmarkUI_InWindowPopoverMenu_RenderOpen(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	gui := NewUI(application)
 	gui.activeMenu = "file" // Menu popup actively rendered in OpenGL
 
@@ -48,7 +46,7 @@ func BenchmarkUI_InWindowPopoverMenu_RenderOpen(b *testing.B) {
 }
 
 func BenchmarkUI_InWindowTabContextMenu_RenderOpen(b *testing.B) {
-	application := app.NewApp()
+	application := newTestApp(b)
 	application.NewTab("main.go", "package main\n")
 	gui := NewUI(application)
 	gui.tabContextMenuOpen = true

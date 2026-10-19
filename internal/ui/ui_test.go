@@ -9,8 +9,17 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+// newTestApp builds an App with a throwaway session directory. newTestApp(t)
+// restores and auto-saves the developer's real session, so using it here would
+// both write test tabs into it and make every number below depend on whatever
+// that developer happened to have open.
+func newTestApp(tb testing.TB) *app.App {
+	tb.Helper()
+	return app.NewAppWithSessionDir(tb.TempDir())
+}
+
 func TestUIHeadlessComponents(t *testing.T) {
-	application := app.NewApp()
+	application := newTestApp(t)
 	doc := application.NewTab("hello.go", "package main\n\nfunc main() {}\n")
 	gui := NewUI(application)
 
@@ -58,7 +67,7 @@ func TestUIHeadlessComponents(t *testing.T) {
 }
 
 func TestMenuHoverNoOverlap(t *testing.T) {
-	application := app.NewApp()
+	application := newTestApp(t)
 	application.NewTab("main.go", "package main\n")
 	gui := NewUI(application)
 
@@ -96,7 +105,7 @@ func TestMenuHoverNoOverlap(t *testing.T) {
 }
 
 func TestEditorContextMenuMultipleRightClicks(t *testing.T) {
-	application := app.NewApp()
+	application := newTestApp(t)
 	application.NewTab("main.go", "package main\n")
 	gui := NewUI(application)
 
@@ -132,7 +141,7 @@ func TestEditorContextMenuMultipleRightClicks(t *testing.T) {
 }
 
 func TestAboutInWindowModal(t *testing.T) {
-	application := app.NewApp()
+	application := newTestApp(t)
 	gui := NewUI(application)
 
 	tester := ui.NewTester(gui.Render, 960, 680)
@@ -174,7 +183,7 @@ func TestAboutInWindowModal(t *testing.T) {
 }
 
 func TestToggleWordWrap(t *testing.T) {
-	application := app.NewApp()
+	application := newTestApp(t)
 	doc := application.NewTab("wrap.txt", "This is a very long line that will wrap when soft wrap is enabled.")
 	gui := NewUI(application)
 
@@ -213,7 +222,7 @@ func TestToggleWordWrap(t *testing.T) {
 }
 
 func TestZoom(t *testing.T) {
-	application := app.NewApp()
+	application := newTestApp(t)
 	doc := application.NewTab("zoom.txt", "package main\n")
 	gui := NewUI(application)
 
