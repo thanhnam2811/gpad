@@ -182,11 +182,6 @@ func (u *UI) Render(c *ui.Context) {
 	// In-Window Editor Context Menu (100% OpenGL, 0 GTK popup)
 	if u.editorContextMenu.Open && len(u.editorContextMenu.Items) > 0 {
 		ui.Overlay(c, func() {
-			catcher := ui.Box(c.Key("ctx-catcher")).Absolute().Left(0).Top(0).Right(0).Bottom(0)
-			if catcher.Clicked() || catcher.OverlayShortcut(0, ui.KeyEscape) {
-				u.editorContextMenu.Open = false
-			}
-
 			posX := u.editorContextMenu.X
 			posY := u.editorContextMenu.Y
 			if posX+200 > 940 {
@@ -198,6 +193,11 @@ func (u *UI) Render(c *ui.Context) {
 
 			panel := ui.Box(c.Key("ctx-panel")).Absolute().Left(posX).Top(posY)
 			panel.Background(t.Surface).Border(1, t.Border).Radius(4).Padding(3, 3).Width(200)
+
+			// Dismisses on Escape or whenever pointer presses anywhere outside the panel
+			if panel.OverlayShortcut(0, ui.KeyEscape) || panel.PressedOutside() {
+				u.editorContextMenu.Open = false
+			}
 
 			panel.Children(func() {
 				ui.Column(c).FillWidth().Gap(1).Children(func() {
