@@ -50,6 +50,9 @@ type UI struct {
 
 	// In-Window Confirm Close Modal
 	confirmClose ConfirmCloseState
+
+	// In-Window About Modal
+	aboutOpen bool
 }
 
 // NewUI initializes the UI renderer.
@@ -290,6 +293,49 @@ func (u *UI) Render(c *ui.Context) {
 			})
 		})
 	}
+
+	// In-Window About Gopad++ Modal (100% OpenGL GPU, zero GTK dialog)
+	if u.aboutOpen {
+		ui.Modal(c, &u.aboutOpen, func() {
+			ui.Column(c).Width(420).Background(t.Surface).Border(1, t.Border).Radius(8).Padding(20, 20).Gap(14).Children(func() {
+				ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
+					ui.Box(c).Size(38, 38).Radius(6).Background(t.SurfaceHover).Center().Children(func() {
+						ui.Text(c, "G++").FontSize(15).FontWeight(700).TextColor(t.Accent)
+					})
+					ui.Column(c).Gap(2).Children(func() {
+						ui.Text(c, "Gopad++").FontSize(16).FontWeight(700).TextColor(t.Text)
+						ui.Text(c, "v0.1.0-alpha • High-Density Native Text Editor").FontSize(11).TextColor(t.TextMuted)
+					})
+				})
+
+				renderMenuSeparator(c, t)
+
+				ui.Column(c).Gap(6).Children(func() {
+					renderAboutDetailRow(c, t, "Engine", "Pure Go & mygo/ui (Purego GPU OpenGL)")
+					renderAboutDetailRow(c, t, "Host", "Ubuntu 24.04.5 LTS (GNOME 46 Wayland)")
+					renderAboutDetailRow(c, t, "Performance", "Zero WebView • Zero Electron • 120Hz Target")
+					renderAboutDetailRow(c, t, "License", "MIT Open Source")
+				})
+
+				ui.Row(c).FillWidth().Justify(ui.End).Margin(6, 0, 0, 0).Children(func() {
+					okBtn := ui.ButtonBase(c.Key("about-ok-btn")).Height(26).Padding(2, 18).Radius(4).Background(t.Accent)
+					okBtn.Children(func() {
+						ui.Text(c, "OK").FontSize(11).FontWeight(600).TextColor(ui.RGB(255, 255, 255))
+					})
+					if okBtn.Clicked() {
+						u.aboutOpen = false
+					}
+				})
+			})
+		})
+	}
+}
+
+func renderAboutDetailRow(c *ui.Context, t *ui.Theme, label, val string) {
+	ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Children(func() {
+		ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(t.Text)
+		ui.Text(c, val).FontSize(11).TextColor(t.TextMuted)
+	})
 }
 
 func (u *UI) renderTabBar(c *ui.Context, t *ui.Theme) {

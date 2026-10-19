@@ -130,3 +130,45 @@ func TestEditorContextMenuMultipleRightClicks(t *testing.T) {
 		t.Fatalf("BUG REPRODUCED: Old context menu at (100, 100) remained open and was not replaced by new menu at (400, 400)!")
 	}
 }
+
+func TestAboutInWindowModal(t *testing.T) {
+	application := app.NewApp()
+	gui := NewUI(application)
+
+	tester := ui.NewTester(gui.Render, 960, 680)
+	tester.Frame()
+
+	// 1. Open Help menu
+	if err := tester.Click("Help"); err != nil {
+		t.Fatalf(`Click("Help") failed: %v`, err)
+	}
+
+	// 2. Click About Gopad++ item
+	if err := tester.Click("About Gopad++"); err != nil {
+		t.Fatalf(`Click("About Gopad++") failed: %v`, err)
+	}
+
+	// 3. Modal must be open in-window (OpenGL GPU, 0 GTK dialog)
+	if !gui.aboutOpen {
+		t.Fatalf("expected gui.aboutOpen to be true")
+	}
+
+	tester.Frame()
+
+	// 4. Verify in-window modal rendered texts
+	if !tester.HasText("v0.1.0-alpha • High-Density Native Text Editor") {
+		t.Fatalf("expected version info in About modal, texts: %v", tester.Texts())
+	}
+	if !tester.HasText("Pure Go & mygo/ui (Purego GPU OpenGL)") {
+		t.Fatalf("expected engine info in About modal, texts: %v", tester.Texts())
+	}
+
+	// 5. Click OK button inside modal to close
+	if err := tester.Click("OK"); err != nil {
+		t.Fatalf(`Click("OK") failed: %v`, err)
+	}
+
+	if gui.aboutOpen {
+		t.Fatalf("expected gui.aboutOpen to be false after clicking OK")
+	}
+}

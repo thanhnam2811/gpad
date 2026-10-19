@@ -259,12 +259,7 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 			content: func() {
 				renderMenuItem(c, t, "about", "About Gopad++", "", false, func() {
 					u.activeMenu = ""
-					_, _ = mygo.Dialog.Message(mygo.MessageOptions{
-						Title:   "About Gopad++",
-						Message: "Gopad++ (gpad) v0.1.0-alpha",
-						Detail:  "A high-density native text editor for Linux (GNOME 46) written in Go.\nOpenGL GPU Rendering • Strictly Zero Webview • Notepad++ Ergonomics",
-						Type:    mygo.MessageInfo,
-					})
+					u.aboutOpen = true
 				})
 			},
 		},

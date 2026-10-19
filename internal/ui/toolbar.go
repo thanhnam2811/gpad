@@ -45,7 +45,7 @@ func (u *UI) renderToolbar(c *ui.Context, t *ui.Theme) {
 			}
 		})
 		u.renderToolBtn(c, t, "tb-close", IconClose, "Close Tab (Ctrl+W)", func() {
-			u.app.CloseTab(u.app.ActiveTab)
+			u.RequestCloseTab(u.app.ActiveTab)
 		})
 
 		u.renderToolbarSep(c, t)
