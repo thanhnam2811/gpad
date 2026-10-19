@@ -25,6 +25,9 @@
 | `[PERF-009]` | `cmd/gpad` | GTK Menu Bar Dynamic Allocations | Static Cached Native GTK Menu Hierarchy | 56.3 ns/op (11,500x speedup), 48 B/op (1 alloc) | `[Agent-4]` APPROVED |
 | `[PERF-010]` | `internal/app` | 500MB Unsaved Edits Loss & Search UI Freeze | Heavy Shadow Drafts + Zero-Lock Hybrid Search | 16.3ms vs 101ms (128,000x less RAM), 6.69ms search (13,100x speedup) | `[Agent-4]` APPROVED |
 | `[PERF-011]` | `internal/ui` | External GTK Menu Disjoint & Emoji Toolbar | In-Window 22px OpenGL Menu + 16x16 SVG Micro Toolbar | 26.3µs toolbar, 24.4µs menubar (0.29% of 120Hz frame budget) | `[Agent-4]` APPROVED |
+| `[PERF-012]` | `internal/instance` | Multi-Process Window Spawning on File Open | Unix Domain Socket IPC (Single-Instance Tab Forwarding) | 63.7 µs/op IPC dispatch, eliminates redundant windows | `[Agent-4]` APPROVED |
+| `[PERF-013]` | `internal/keybind` | Hardcoded Desynchronized Shortcut Bindings | Hash-Packed Action Registry | 24.5 ns/op lookup, 0 B/op, 0 allocs/op | `[Agent-4]` APPROVED |
+| `[PERF-014]` | `internal/ui` | Native GTK Menu Theming & Context Popup Clashing | 100% In-Window OpenGL PopoverBase Menus | 0.27 ms frame render (<3.3% of 120Hz frame budget) | `[Agent-4]` APPROVED |
 
 ---
 
@@ -543,3 +546,92 @@ BenchmarkUI_MenuBar_Candidate_B_InWindowCompact-4        48804   23954 ns/op    
 
 
 
+
+
+---
+
+## [PERF-012] Single-Instance Unix Domain Socket & Tab Forwarding
+
+### 1. Context & Problem Statement
+When opening files from the command line (`gpad file.txt`) or double-clicking files in GNOME Files (Nautilus), the OS starts a new process. Without a single-instance lock and IPC mechanism, this creates redundant OS windows rather than opening the target file in a new tab of the existing window.
+
+### 2. Implementation
+- Unix Domain Socket located at `$XDG_RUNTIME_DIR/gpad.sock` (fallback `~/.config/gpad/gpad.sock`).
+- Subsequent processes attempt `net.DialTimeout` with a 200ms threshold.
+- If an active instance answers, file paths are forwarded via `OPEN <path>` and the second process exits with code 0 immediately.
+- If no instance is active, the process starts a background listener and creates the main window.
+
+### 3. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz, Count=5)
+```
+BenchmarkSingleInstance_Forward-4   18495   60961 ns/op   10754 B/op   36 allocs/op
+BenchmarkSingleInstance_Forward-4   18405   63948 ns/op   10753 B/op   36 allocs/op
+BenchmarkSingleInstance_Forward-4   17254   67273 ns/op   10754 B/op   36 allocs/op
+BenchmarkSingleInstance_Forward-4   18754   60109 ns/op   10753 B/op   36 allocs/op
+BenchmarkSingleInstance_Forward-4   19440   66283 ns/op   10753 B/op   36 allocs/op
+```
+
+### 4. Decision & Architecture Analysis
+- IPC transfer latency is **63.7 µs** end-to-end between separate processes.
+- Eradicates duplicate window and GPU context overhead.
+- Passed full concurrency and race tests (`go test -race ./internal/instance`).
+
+### 5. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED**
+
+---
+
+## [PERF-013] Zero-Allocation Action & Keyboard Shortcut Registry
+
+### 1. Context & Problem Statement
+Keyboard shortcuts and action handlers were hardcoded and scattered across `ui.go`, `menubar.go`, and `toolbar.go`. A production-grade editor requires a decoupled Action Registry with dynamic shortcut formatting and $O(1)$ zero-allocation key event lookup.
+
+### 2. Implementation
+- `ActionID` registry storing action titles, categories, and default shortcuts.
+- Key combination packing into a single `uint32`: `(uint32(mods) << 16) | uint32(key)`.
+- Direct hashmap lookup providing $O(1)$ dispatch.
+
+### 3. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz, Count=5)
+```
+BenchmarkRegistry_Lookup-4   48479491   24.71 ns/op   0 B/op   0 allocs/op
+BenchmarkRegistry_Lookup-4   45398901   24.82 ns/op   0 B/op   0 allocs/op
+BenchmarkRegistry_Lookup-4   42108127   24.27 ns/op   0 B/op   0 allocs/op
+BenchmarkRegistry_Lookup-4   49768644   24.50 ns/op   0 B/op   0 allocs/op
+BenchmarkRegistry_Lookup-4   47226465   24.64 ns/op   0 B/op   0 allocs/op
+```
+
+### 4. Decision & Architecture Analysis
+- Lookup latency: **24.5 ns/op** with **0 B/op and 0 allocs/op**.
+- Guaranteed zero garbage collection pressure during rapid typing and shortcut usage.
+
+### 5. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED**
+
+---
+
+## [PERF-014] 100% In-Window OpenGL GPU Popover Menus
+
+### 1. Context & Problem Statement
+`mygo` invokes GTK3 native `gtkMenuNew` and `gtkMenuPopupAtPointer` under the hood when using `btn.Menu()` or `elem.ContextMenu()`. This creates native GTK popup windows that ignore the dark theme, border radius, and compact typography of `gpad`.
+
+### 2. Implementation
+- Complete migration of Top Menu Bar and Tab Context Menu to `ui.PopoverBase`.
+- Popover layer rendered directly into `ui.Overlay` in the main OpenGL GPU canvas.
+- Cohesive hover switching between top-level menus (`File`, `Edit`, `Search`, `View`, `Document`, `Help`).
+- 100% theme synchronization with GNOME 46 (`t.Surface`, `t.Border`, `t.Radius(4)`, `t.Text`, `t.TextMuted`, `t.SurfaceHover`).
+
+### 3. Empirical Benchmark Results (Host: Intel Core i5-7500 @ 3.40GHz, Count=5)
+```
+BenchmarkUI_InWindowPopoverMenu_RenderOpen-4      4345   276308 ns/op   8157 B/op   122 allocs/op
+BenchmarkUI_InWindowTabContextMenu_RenderOpen-4   4850   248638 ns/op   7868 B/op   115 allocs/op
+```
+
+### 4. Decision & Architecture Analysis
+- Frame render latency: **0.27 ms** for top menu bar popover and **0.24 ms** for tab context menu.
+- Consumes **< 3.3%** of the 8.33 ms frame budget for 120Hz displays.
+- Completely eliminates native GTK window dependencies for popup menus.
+
+### 5. Review & Sign-Off
+- **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
+- **Status**: **APPROVED**
