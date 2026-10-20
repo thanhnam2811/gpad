@@ -22,6 +22,9 @@ type Document struct {
 	Loading          bool
 	LoadingSize      int64
 	ReadyCh          chan struct{}
+	LoadError        error
+	caretLine        int
+	caretCol         int
 }
 
 // NewDocument creates a new Document instance from raw content.
@@ -57,12 +60,23 @@ func NewDocument(id, title, content string, path string) *Document {
 // SetBufferReady atomically updates the document with the loaded buffer and state.
 func (d *Document) SetBufferReady(buf *editor.Buffer, st *editor.State) {
 	d.mu.Lock()
+	if !d.Loading && d.ReadyCh != nil {
+		d.mu.Unlock()
+		return
+	}
 	d.Buffer = buf
 	if st != nil && st.TopPadding == 0 {
 		st.TopPadding = 4
 	}
 	d.State = st
+	if st != nil {
+		pos := st.CursorPos()
+		d.caretLine, d.caretCol = pos.Line+1, pos.Col+1
+	}
 	d.Loading = false
+	if d.ReadyCh != nil {
+		close(d.ReadyCh)
+	}
 	if buf != nil {
 		d.LastSavedVersion = buf.Version()
 	}
@@ -78,6 +92,8 @@ func (d *Document) IsLoading() bool {
 
 // IsDirty returns true if document has unsaved modifications.
 func (d *Document) IsDirty() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.Dirty {
 		return true
 	}
@@ -89,11 +105,15 @@ func (d *Document) IsDirty() bool {
 
 // SetDirty manually sets the dirty flag (e.g. when restoring an unsaved draft).
 func (d *Document) SetDirty(dirty bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.Dirty = dirty
 }
 
 // CheckModified detects if the buffer version changed since last check.
 func (d *Document) CheckModified() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.Buffer == nil {
 		return false
 	}
@@ -108,6 +128,8 @@ func (d *Document) CheckModified() bool {
 
 // MarkSaved resets the modified flag and syncs version.
 func (d *Document) MarkSaved() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.Dirty = false
 	if d.Buffer != nil {
 		d.Buffer.MarkSaved()
@@ -117,6 +139,8 @@ func (d *Document) MarkSaved() {
 
 // Content returns the full text content of the document.
 func (d *Document) Content() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.Buffer == nil {
 		return ""
 	}
@@ -125,6 +149,8 @@ func (d *Document) Content() string {
 
 // Len returns the byte length of the document text.
 func (d *Document) Len() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.Buffer == nil {
 		return 0
 	}
@@ -133,6 +159,8 @@ func (d *Document) Len() int {
 
 // LineCount returns total number of lines.
 func (d *Document) LineCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.Buffer == nil {
 		return 0
 	}
@@ -141,6 +169,8 @@ func (d *Document) LineCount() int {
 
 // LineEndingDesc returns "CRLF" or "LF".
 func (d *Document) LineEndingDesc() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.CRLF {
 		return "CRLF"
 	}
@@ -148,7 +178,8 @@ func (d *Document) LineEndingDesc() string {
 }
 
 // CaretPosition returns current line and column (1-indexed) of primary caret.
-// Zero allocations: reads directly from editor.State cursor without extracting line text.
+// Call on the UI thread: editor.State belongs to that thread. Also caches
+// the position for background session persistence.
 func (d *Document) CaretPosition() (line, col int) {
 	d.mu.RLock()
 	st := d.State
@@ -159,6 +190,35 @@ func (d *Document) CaretPosition() (line, col int) {
 		return 1, 1
 	}
 	pos := st.CursorPos()
+	d.mu.Lock()
+	d.caretLine, d.caretCol = pos.Line+1, pos.Col+1
+	d.mu.Unlock()
 	return pos.Line + 1, pos.Col + 1
 }
 
+// SetLoadError publishes a terminal load failure and releases readiness waiters.
+func (d *Document) SetLoadError(err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.Loading {
+		return
+	}
+	d.LoadError = err
+	d.Loading = false
+	if d.ReadyCh != nil {
+		close(d.ReadyCh)
+	}
+}
+
+func (d *Document) LoadingError() error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.LoadError
+}
+
+// CachedCaretPosition is safe for autosave; it never touches editor.State.
+func (d *Document) CachedCaretPosition() (int, int) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return max(1, d.caretLine), max(1, d.caretCol)
+}

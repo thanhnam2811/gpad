@@ -123,7 +123,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Undo",
 					Accelerator: "CmdOrCtrl+Z",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.Undo)
 						}
 					},
@@ -132,7 +132,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Redo",
 					Accelerator: "CmdOrCtrl+Y",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.Redo)
 						}
 					},
@@ -142,7 +142,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Cut",
 					Accelerator: "CmdOrCtrl+X",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.Cut)
 						}
 					},
@@ -151,7 +151,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Copy",
 					Accelerator: "CmdOrCtrl+C",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.Copy)
 						}
 					},
@@ -160,7 +160,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Paste",
 					Accelerator: "CmdOrCtrl+V",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.Paste)
 						}
 					},
@@ -169,7 +169,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Select All",
 					Accelerator: "CmdOrCtrl+A",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.SelectAll)
 						}
 					},
@@ -179,7 +179,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Duplicate Line",
 					Accelerator: "CmdOrCtrl+D",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.DuplicateLinesDown)
 						}
 					},
@@ -188,7 +188,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Delete Line",
 					Accelerator: "CmdOrCtrl+Shift+K",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.DeleteLine)
 						}
 					},
@@ -197,7 +197,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Label:       "Toggle Line Comment",
 					Accelerator: "CmdOrCtrl+/",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							doc.State.Run(editor.ToggleComment)
 						}
 					},
@@ -269,7 +269,7 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 				{
 					Label: "Toggle Line Numbers",
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
-						if doc := application.ActiveDocument(); doc != nil && doc.State != nil {
+						if doc := application.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 							if doc.State.LineNumbers == editor.LineNumbersOff {
 								doc.State.LineNumbers = editor.LineNumbersOn
 							} else {

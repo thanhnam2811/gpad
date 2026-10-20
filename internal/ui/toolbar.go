@@ -52,27 +52,27 @@ func (u *UI) renderToolbar(c *ui.Context, t *ui.Theme) {
 
 		// Group 2: Edit Actions
 		u.renderToolBtn(c, t, "tb-cut", IconCut, "Cut (Ctrl+X)", func() {
-			if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+			if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 				doc.State.Run(editor.Cut)
 			}
 		})
 		u.renderToolBtn(c, t, "tb-copy", IconCopy, "Copy (Ctrl+C)", func() {
-			if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+			if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 				doc.State.Run(editor.Copy)
 			}
 		})
 		u.renderToolBtn(c, t, "tb-paste", IconPaste, "Paste (Ctrl+V)", func() {
-			if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+			if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 				doc.State.Run(editor.Paste)
 			}
 		})
 		u.renderToolBtn(c, t, "tb-undo", IconUndo, "Undo (Ctrl+Z)", func() {
-			if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+			if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 				doc.State.Run(editor.Undo)
 			}
 		})
 		u.renderToolBtn(c, t, "tb-redo", IconRedo, "Redo (Ctrl+Y)", func() {
-			if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+			if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 				doc.State.Run(editor.Redo)
 			}
 		})
@@ -94,7 +94,7 @@ func (u *UI) renderToolbar(c *ui.Context, t *ui.Theme) {
 
 		// Group 4: View Actions
 		wrapActive := false
-		if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+		if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 			wrapActive = doc.State.IsSoftWrap()
 		}
 		wrapBtn := ui.ButtonBase(c.Key("tb-wrap")).Size(22, 22).Radius(3).Center().FocusRing(false)

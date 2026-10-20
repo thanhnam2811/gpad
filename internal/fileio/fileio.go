@@ -1,19 +1,21 @@
 package fileio
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 )
 
 // FilePayload encapsulates the ingested file bytes and its cleanup hook.
 type FilePayload struct {
-	Data    []byte
-	unmap   func() error
-	once    sync.Once
-	isMmap  bool
-	err     error
+	Data   []byte
+	unmap  func() error
+	once   sync.Once
+	isMmap bool
+	err    error
 }
 
 // Close safely unmaps or frees memory. Idempotent via sync.Once.
@@ -87,12 +89,35 @@ func LoadFile(path string) (*FilePayload, error) {
 
 // SaveFile atomically writes data using a temporary file and atomic os.Rename.
 func SaveFile(path string, data []byte) error {
-	dir := os.TempDir()
+	// Follow existing symlinks so saving edits their target, as opening does.
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		path = resolved
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	} else if st, lerr := os.Lstat(path); lerr == nil && st.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("fileio: dangling symlink: %w", err)
+	}
+	mode := os.FileMode(0600)
+	if st, err := os.Stat(path); err == nil {
+		if !st.Mode().IsRegular() {
+			return fmt.Errorf("fileio: target is not a regular file")
+		}
+		mode = st.Mode().Perm()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	dir := filepath.Dir(path)
 	tmpFile, err := os.CreateTemp(dir, "gpad-save-*.tmp")
 	if err != nil {
 		return err
 	}
 	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+	if err := tmpFile.Chmod(mode); err != nil {
+		tmpFile.Close()
+		return err
+	}
 
 	n, err := tmpFile.Write(data)
 	if err != nil {
@@ -118,5 +143,13 @@ func SaveFile(path string, data []byte) error {
 	}
 
 	// Atomic replace
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }

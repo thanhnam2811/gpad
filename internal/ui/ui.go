@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"math"
 	"fmt"
+	"math"
 	"os/exec"
 	"strings"
 
@@ -125,7 +125,7 @@ const (
 // ToggleWordWrap toggles soft wrapping on the active editor document.
 func (u *UI) ToggleWordWrap() {
 	doc := u.app.ActiveDocument()
-	if doc == nil || doc.State == nil {
+	if doc == nil || doc.IsLoading() || doc.State == nil {
 		return
 	}
 	doc.State.ToggleSoftWrap()
@@ -161,7 +161,7 @@ func (u *UI) ZoomReset() {
 
 func (u *UI) applyFontSize() {
 	for _, doc := range u.app.Tabs {
-		if doc != nil && doc.State != nil {
+		if doc != nil && !doc.IsLoading() && doc.State != nil {
 			doc.State.Font.Size = u.fontSize
 		}
 	}
@@ -539,7 +539,7 @@ func (u *UI) OpenFind() {
 	if doc == nil {
 		return
 	}
-	if doc.Len() >= 5*1024*1024 || doc.IsLoading() {
+	if doc.IsLoading() || doc.Len() >= 5*1024*1024 {
 		u.largeFindOpen = true
 		return
 	}
@@ -554,7 +554,7 @@ func (u *UI) OpenFindReplace() {
 	if doc == nil {
 		return
 	}
-	if doc.Len() >= 5*1024*1024 || doc.IsLoading() {
+	if doc.IsLoading() || doc.Len() >= 5*1024*1024 {
 		u.largeFindOpen = true
 		return
 	}
@@ -566,7 +566,7 @@ func (u *UI) OpenFindReplace() {
 // FindNext jumps to the next match.
 func (u *UI) FindNext() {
 	doc := u.app.ActiveDocument()
-	if doc == nil {
+	if doc == nil || doc.IsLoading() {
 		return
 	}
 	if u.largeFindOpen {
@@ -585,7 +585,7 @@ func (u *UI) FindNext() {
 // FindPrevious jumps to the previous match.
 func (u *UI) FindPrevious() {
 	doc := u.app.ActiveDocument()
-	if doc == nil {
+	if doc == nil || doc.IsLoading() {
 		return
 	}
 	if u.largeFindOpen {
@@ -603,20 +603,20 @@ func (u *UI) FindPrevious() {
 
 // GoToLine opens the go-to-line bar in the active editor.
 func (u *UI) GoToLine() {
-	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+	if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 		doc.State.Run(editor.GoToLine)
 	}
 }
 
 // SelectAllMatches selects all occurrences of the query as multi-carets.
 func (u *UI) SelectAllMatches() {
-	if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+	if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 		doc.State.Run(editor.SelectAllMatches)
 	}
 }
 
 func (u *UI) jumpToMatch(doc *buffer.Document, m search.Match) {
-	if doc == nil || doc.State == nil {
+	if doc == nil || doc.IsLoading() || doc.State == nil {
 		return
 	}
 	if m.Line > 0 {
@@ -643,6 +643,10 @@ func (u *UI) renderEditor(c *ui.Context) {
 		return
 	}
 
+	if err := doc.LoadingError(); err != nil {
+		ui.Column(c).Fill().Center().Children(func() { ui.Text(c, "Unable to load file: "+err.Error()).FontSize(13).TextColor(c.Theme().TextMuted) })
+		return
+	}
 	if doc.State == nil {
 		ui.Column(c).Fill().Center().Children(func() {
 			ui.Text(c, "No document open")
@@ -704,8 +708,8 @@ func (u *UI) renderEditor(c *ui.Context) {
 	// Main code editor occupying entire central viewport
 	if doc.State != nil {
 		if doc.State.TopPadding == 0 {
-		doc.State.TopPadding = 4
-	}
+			doc.State.TopPadding = 4
+		}
 		if u.fontSize > 0 && doc.State.Font.Size != u.fontSize {
 			doc.State.Font.Size = u.fontSize
 		}
@@ -734,7 +738,7 @@ func (u *UI) renderStatusBar(c *ui.Context, t *ui.Theme) {
 	le := "LF"
 	sizeStr := "0 B"
 
-	if doc != nil {
+	if doc != nil && !doc.IsLoading() {
 		line, col = doc.CaretPosition()
 		enc = doc.Encoding
 		le = doc.LineEndingDesc()
@@ -748,16 +752,20 @@ func (u *UI) renderStatusBar(c *ui.Context, t *ui.Theme) {
 		}
 	}
 
-	latUs := u.app.LastOpLatency.Microseconds()
+	latUs := u.app.OperationLatency().Microseconds()
 	zoomPct := 100
 	if u.fontSize > 0 {
 		zoomPct = int(math.Round(float64(u.fontSize) / float64(defaultEditorFontSize) * 100))
 	}
 	wrapStatus := "Wrap: Off"
-	if doc != nil && doc.State != nil && doc.State.IsSoftWrap() {
+	if doc != nil && !doc.IsLoading() && doc.State != nil && doc.State.IsSoftWrap() {
 		wrapStatus = "Wrap: On"
 	}
 	statusText := fmt.Sprintf("Ln %d, Col %d  |  %s  |  %s  |  %s  |  %d%%  |  %s  |  Latency: %d µs", line, col, enc, le, sizeStr, zoomPct, wrapStatus, latUs)
+
+	if err := u.app.SessionError(); err != nil {
+		statusText = "Session save failed: " + err.Error()
+	}
 
 	ui.Row(c).FillWidth().Height(20).Background(t.Surface).Padding(1, 8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, statusText).FontSize(11).TextColor(t.TextMuted)

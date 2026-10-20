@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -46,11 +47,19 @@ type App struct {
 	SearchEngine   search.Engine
 	tabCounter     int
 	stopAutoSave   chan struct{}
+	autoSaveDone   chan struct{}
+	stopOnce       sync.Once
+	persistErr     error
+	sessionRetry   bool
+	shadowPaths    map[string]bool
+	restoreErr     error
 	OnConfirmClose CloseConfirmHandler
 
-	searchMu     sync.Mutex
-	searchTimer  *time.Timer
-	searchCancel context.CancelFunc
+	searchMu         sync.Mutex
+	searchTimer      *time.Timer
+	searchCancel     context.CancelFunc
+	searchGeneration uint64
+	searchStopped    bool
 }
 
 // NewApp initializes a new application state with one default Untitled tab.
@@ -65,7 +74,7 @@ func NewApp() *App {
 
 // NewAppWithSessionDir initializes App with custom session directory for clean isolation.
 func NewAppWithSessionDir(sessionDir string) *App {
-	sessMgr, _ := session.NewManager(sessionDir)
+	sessMgr, managerErr := session.NewManager(sessionDir)
 
 	a := &App{
 		Tabs:         make([]*buffer.Document, 0, 8),
@@ -74,10 +83,18 @@ func NewAppWithSessionDir(sessionDir string) *App {
 		SearchEngine: search.NewAdaptiveSearchDispatcher(),
 		tabCounter:   0,
 		stopAutoSave: make(chan struct{}),
+		autoSaveDone: make(chan struct{}),
+		restoreErr:   managerErr,
 	}
 
 	// Try restoring session; if none or empty, open default Untitled-1
-	if err := a.RestoreSession(); err != nil || len(a.Tabs) == 0 {
+	if err := a.RestoreSession(); err != nil {
+		a.restoreErr = err
+	}
+	if a.restoreErr != nil {
+		a.recordSessionError(a.restoreErr)
+	}
+	if len(a.Tabs) == 0 {
 		a.NewTab("", "")
 	}
 
@@ -89,6 +106,7 @@ func NewAppWithSessionDir(sessionDir string) *App {
 
 // startAutoSaveLoop periodically checks for buffer edits and persists drafts.
 func (a *App) startAutoSaveLoop() {
+	defer close(a.autoSaveDone)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -104,32 +122,34 @@ func (a *App) startAutoSaveLoop() {
 
 // Stop halts the background autosave routine and closes sessions.
 func (a *App) Stop() {
-	select {
-	case <-a.stopAutoSave:
-		// already closed
-	default:
-		close(a.stopAutoSave)
-	}
-
-	a.searchMu.Lock()
-	if a.searchTimer != nil {
-		a.searchTimer.Stop()
-	}
-	if a.searchCancel != nil {
-		a.searchCancel()
-	}
-	a.searchMu.Unlock()
-
-	_ = a.SaveSession()
-	if a.SessionMgr != nil {
-		_ = a.SessionMgr.Close()
-	}
+	a.stopOnce.Do(func() {
+		if a.stopAutoSave != nil {
+			close(a.stopAutoSave)
+		}
+		if a.autoSaveDone != nil {
+			<-a.autoSaveDone
+		}
+		a.searchMu.Lock()
+		a.searchStopped = true
+		a.searchGeneration++
+		if a.searchTimer != nil {
+			a.searchTimer.Stop()
+		}
+		if a.searchCancel != nil {
+			a.searchCancel()
+		}
+		a.searchMu.Unlock()
+		a.persistSession()
+		if a.SessionMgr != nil {
+			a.recordSessionError(a.SessionMgr.Close())
+		}
+	})
 }
 
 // CheckAutoSave checks if any tab has been modified since last save and commits to WAL.
 func (a *App) CheckAutoSave() {
 	a.mu.Lock()
-	modified := false
+	modified := a.sessionRetry
 	for _, doc := range a.Tabs {
 		if doc != nil && doc.CheckModified() {
 			modified = true
@@ -138,7 +158,7 @@ func (a *App) CheckAutoSave() {
 	a.mu.Unlock()
 
 	if modified {
-		_ = a.SaveSession()
+		a.persistSession()
 	}
 }
 
@@ -151,12 +171,16 @@ func (a *App) NewTab(title, content string) *buffer.Document {
 	}
 	id := fmt.Sprintf("doc-%d-%d", time.Now().UnixNano(), a.tabCounter)
 	doc := buffer.NewDocument(id, title, content, "")
+	if content != "" {
+		doc.SetDirty(true)
+	}
 
 	a.Tabs = append(a.Tabs, doc)
 	a.ActiveTab = len(a.Tabs) - 1
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
+	a.refreshDocumentSearch()
+	a.persistSession()
 	return doc
 }
 
@@ -167,16 +191,6 @@ func (a *App) shadowDraftDir() string {
 		return filepath.Join(homeDir, ".config", "gpad", "session", "shadows")
 	}
 	return filepath.Join(a.SessionMgr.Dir(), "shadows")
-}
-
-// removeShadowDraft cleans up any on-disk draft file associated with doc.
-func (a *App) removeShadowDraft(doc *buffer.Document) {
-	if doc == nil || doc.ID == "" {
-		return
-	}
-	dir := a.shadowDraftDir()
-	safeID := filepath.Base(doc.ID)
-	_ = os.Remove(filepath.Join(dir, safeID+".draft"))
 }
 
 // CloseTab closes tab at index. If the document has unsaved modifications and
@@ -198,6 +212,9 @@ func (a *App) CloseTab(index int) bool {
 		case CloseActionCancel:
 			return false
 		case CloseActionSave:
+			if doc.IsLoading() || doc.LoadingError() != nil {
+				return false
+			}
 			if doc.Path != "" {
 				if err := fileio.SaveFile(doc.Path, []byte(doc.Content())); err != nil {
 					return false
@@ -209,7 +226,7 @@ func (a *App) CloseTab(index int) bool {
 			}
 		case CloseActionDiscard:
 			// User chose to discard unsaved changes
-			a.removeShadowDraft(doc)
+			// Draft cleanup follows successful checkpoint publication.
 		}
 	}
 
@@ -220,7 +237,7 @@ func (a *App) CloseTab(index int) bool {
 		return false
 	}
 
-	a.removeShadowDraft(doc)
+	// Draft cleanup follows successful checkpoint publication.
 	a.Tabs = append(a.Tabs[:index], a.Tabs[index+1:]...)
 	if len(a.Tabs) == 0 {
 		a.tabCounter++
@@ -228,7 +245,8 @@ func (a *App) CloseTab(index int) bool {
 		a.Tabs = append(a.Tabs, newDoc)
 		a.ActiveTab = 0
 		a.mu.Unlock()
-		_ = a.SaveSession()
+		a.refreshDocumentSearch()
+		a.persistSession()
 		return true
 	}
 
@@ -237,7 +255,8 @@ func (a *App) CloseTab(index int) bool {
 	}
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
+	a.refreshDocumentSearch()
+	a.persistSession()
 	return true
 }
 
@@ -249,7 +268,8 @@ func (a *App) SwitchTab(index int) {
 	}
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
+	a.refreshDocumentSearch()
+	a.persistSession()
 }
 
 // NextTab cycles to next tab (Ctrl+Tab).
@@ -260,7 +280,8 @@ func (a *App) NextTab() {
 	}
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
+	a.refreshDocumentSearch()
+	a.persistSession()
 }
 
 // PrevTab cycles to previous tab.
@@ -271,7 +292,8 @@ func (a *App) PrevTab() {
 	}
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
+	a.refreshDocumentSearch()
+	a.persistSession()
 }
 
 // CloseOtherTabs closes all tabs except the tab at index.
@@ -369,6 +391,7 @@ func (a *App) OpenFile(path string) error {
 		if t != nil && t.Path == path {
 			a.ActiveTab = idx
 			a.mu.Unlock()
+			a.refreshDocumentSearch()
 			return nil
 		}
 	}
@@ -398,27 +421,18 @@ func (a *App) OpenFile(path string) error {
 		}
 		a.mu.Unlock()
 
-		_ = a.SaveSession()
+		a.refreshDocumentSearch()
+		sessionErr := a.persistSession()
 
 		go func() {
 			start := time.Now()
-			payload, err := fileio.LoadFile(path)
-			if err != nil {
-				return
-			}
-			defer payload.Close()
-
-			str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
-			buf := editor.NewBuffer(str)
-			st := &editor.State{Buffer: buf}
-			doc.SetBufferReady(buf, st)
-
+			a.loadDocument(path, doc, 0, 0)
 			a.mu.Lock()
 			a.LastOpLatency = time.Since(start)
 			a.mu.Unlock()
 		}()
 
-		return nil
+		return sessionErr
 	}
 
 	// For standard files (<= 5MB), load synchronously
@@ -444,14 +458,14 @@ func (a *App) OpenFile(path string) error {
 	a.LastOpLatency = time.Since(start)
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
-	return nil
+	a.refreshDocumentSearch()
+	return a.persistSession()
 }
 
 // SaveActiveFile saves the currently active document to disk.
 func (a *App) SaveActiveFile() error {
 	doc := a.ActiveDocument()
-	if doc == nil || doc.Path == "" {
+	if doc == nil || doc.Path == "" || doc.IsLoading() || doc.LoadingError() != nil {
 		return fmt.Errorf("no target file path specified")
 	}
 
@@ -466,15 +480,14 @@ func (a *App) SaveActiveFile() error {
 	a.LastOpLatency = time.Since(start)
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
-	return nil
+	return a.persistSession()
 }
 
 // SaveActiveFileAs saves the active document to a new target path.
 func (a *App) SaveActiveFileAs(targetPath string) error {
 	doc := a.ActiveDocument()
-	if doc == nil {
-		return fmt.Errorf("no active document to save")
+	if doc == nil || doc.IsLoading() || doc.LoadingError() != nil {
+		return fmt.Errorf("no ready document to save")
 	}
 
 	start := time.Now()
@@ -482,29 +495,43 @@ func (a *App) SaveActiveFileAs(targetPath string) error {
 	if err := fileio.SaveFile(targetPath, []byte(content)); err != nil {
 		return err
 	}
+	a.mu.Lock()
 	doc.Path = targetPath
 	doc.Title = filepath.Base(targetPath)
 	doc.MarkSaved()
-
-	a.mu.Lock()
 	a.LastOpLatency = time.Since(start)
 	a.mu.Unlock()
 
-	_ = a.SaveSession()
-	return nil
+	return a.persistSession()
 }
 
 // SaveSession writes tab metadata to session storage.
-// CRITICAL OPTIMIZATION: Never dump hundreds of megabytes of clean disk files into JSON.
-// Dirty drafts >= 2MB are persisted into shadow draft files (~/.config/gpad/session/shadows/<id>.draft)
-// so unsaved edits on 500MB files are 100% crash-resilient without JSON/WAL bloat.
+// Clean disk files omit content. Large drafts use immutable private shadow files
+// published before the WAL checkpoint that references them.
 func (a *App) SaveSession() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.restoreErr != nil {
+		return fmt.Errorf("session recovery failed; preserving checkpoint: %w", a.restoreErr)
+	}
 	if a.SessionMgr == nil {
 		return nil
 	}
 
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	if a.shadowPaths == nil {
+		previous, err := a.SessionMgr.LoadSnapshot()
+		if err != nil {
+			return err
+		}
+		a.shadowPaths = make(map[string]bool)
+		if previous != nil {
+			for _, tab := range previous.Tabs {
+				if tab.ShadowPath != "" {
+					a.shadowPaths[tab.ShadowPath] = true
+				}
+			}
+		}
+	}
 
 	state := session.SessionState{
 		ActiveIndex: a.ActiveTab,
@@ -512,28 +539,45 @@ func (a *App) SaveSession() error {
 	}
 
 	shadowDir := a.shadowDraftDir()
-	_ = os.MkdirAll(shadowDir, 0o755)
+	if err := os.MkdirAll(shadowDir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(shadowDir, 0o700); err != nil {
+		return err
+	}
 
 	for i, doc := range a.Tabs {
-		line, col := doc.CaretPosition()
+		if doc == nil {
+			continue
+		}
+		if err := doc.LoadingError(); err != nil {
+			return fmt.Errorf("load %s: %w", doc.Path, err)
+		}
+		if doc.IsLoading() && doc.IsDirty() {
+			return fmt.Errorf("draft %s still loading", doc.Title)
+		}
+		line, col := doc.CachedCaretPosition()
 		content := ""
 		shadowPath := ""
 
-		if doc.IsDirty() {
+		if doc.IsDirty() || doc.Path == "" {
 			if doc.Len() < 2*1024*1024 {
 				content = doc.Content()
 			} else {
-				// Heavy dirty file (>= 2MB): write shadow draft file to disk
-				safeID := filepath.Base(doc.ID)
-				if safeID == "." || safeID == "/" || safeID == "" {
-					safeID = fmt.Sprintf("doc-%d", i)
+				// Immutable draft generations keep the prior checkpoint valid
+				// until the WAL snapshot referencing this generation is durable.
+				f, err := os.CreateTemp(shadowDir, "draft-*.draft")
+				if err != nil {
+					return err
 				}
-				shadowPath = filepath.Join(shadowDir, safeID+".draft")
-				_ = os.WriteFile(shadowPath, []byte(doc.Content()), 0o644)
+				shadowPath = f.Name()
+				if err := f.Close(); err != nil {
+					return err
+				}
+				if err := fileio.SaveFile(shadowPath, []byte(doc.Content())); err != nil {
+					return err
+				}
 			}
-		} else {
-			safeID := filepath.Base(doc.ID)
-			_ = os.Remove(filepath.Join(shadowDir, safeID+".draft"))
 		}
 
 		state.Tabs[i] = session.TabSession{
@@ -548,12 +592,40 @@ func (a *App) SaveSession() error {
 		}
 	}
 
-	return a.SessionMgr.SaveSnapshot(state)
+	if err := a.SessionMgr.SaveSnapshot(state); err != nil {
+		return err
+	}
+	keep := make(map[string]bool)
+	for _, tab := range state.Tabs {
+		if tab.ShadowPath != "" {
+			keep[tab.ShadowPath] = true
+		}
+	}
+	// Only remove drafts referenced by the prior checkpoint. Unknown files may
+	// be recovery artifacts and are preserved for manual recovery.
+	previousPaths := a.shadowPaths
+	a.shadowPaths = keep
+	for path := range previousPaths {
+		if filepath.Dir(path) == shadowDir && !keep[path] {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // RestoreSession loads prior tabs and state from session storage.
-// Heavy files (> 5MB) and shadow drafts are loaded asynchronously in the background so app window opens in < 10ms.
-func (a *App) RestoreSession() error {
+// Heavy files load asynchronously. Unsaved shadows must finish loading before
+// the workspace can publish replacement checkpoints.
+func (a *App) RestoreSession() (resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			a.mu.Lock()
+			a.restoreErr = resultErr
+			a.mu.Unlock()
+		}
+	}()
 	if a.SessionMgr == nil {
 		return nil
 	}
@@ -570,52 +642,30 @@ func (a *App) RestoreSession() error {
 	for _, t := range state.Tabs {
 		var doc *buffer.Document
 
-		// Case 1: Tab has a shadow draft file (dirty heavy file from previous session)
+		// Draft recovery is transactional: never silently fall back to the
+		// original file if unsaved content cannot be loaded.
 		if t.ShadowPath != "" {
-			if fi, err := os.Stat(t.ShadowPath); err == nil {
-				if fi.Size() > 5*1024*1024 {
-					doc = &buffer.Document{
-						ID:          t.ID,
-						Path:        t.Path,
-						Title:       t.Title,
-						Encoding:    "UTF-8",
-						Dirty:       true,
-						Loading:     true,
-						LoadingSize: fi.Size(),
-						ReadyCh:     make(chan struct{}),
-					}
-					targetDoc := doc
-					targetShadow := t.ShadowPath
-					targetLine := t.CursorLine
-					targetCol := t.CursorCol
-					go func() {
-						payload, err := fileio.LoadFile(targetShadow)
-						if err == nil {
-							defer payload.Close()
-							str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
-							buf := editor.NewBuffer(str)
-							st := &editor.State{Buffer: buf}
-							if targetLine > 0 {
-								st.GoTo(editor.Pos{Line: targetLine - 1, Col: max(0, targetCol - 1)})
-							}
-							targetDoc.SetBufferReady(buf, st)
-							targetDoc.SetDirty(true)
-						}
-					}()
-				} else {
-					payload, err := fileio.LoadFile(t.ShadowPath)
-					if err == nil {
-						str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
-						doc = buffer.NewDocument(t.ID, t.Title, str, t.Path)
-						doc.SetDirty(true)
-						_ = payload.Close()
-					}
+			fi, err := os.Stat(t.ShadowPath)
+			if err != nil {
+				return fmt.Errorf("restore draft %s: %w", t.ShadowPath, err)
+			}
+			if fi.Size() > 5*1024*1024 {
+				doc = &buffer.Document{ID: t.ID, Path: t.Path, Title: t.Title, Encoding: "UTF-8", Dirty: true, Loading: true, LoadingSize: fi.Size(), ReadyCh: make(chan struct{})}
+				go a.loadDocument(t.ShadowPath, doc, t.CursorLine, t.CursorCol)
+			} else {
+				payload, err := fileio.LoadFile(t.ShadowPath)
+				if err != nil {
+					return fmt.Errorf("restore draft %s: %w", t.ShadowPath, err)
 				}
+				str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+				doc = buffer.NewDocument(t.ID, t.Title, str, t.Path)
+				_ = payload.Close()
+				doc.SetDirty(true)
 			}
 		}
 
 		// Case 2: Clean file on disk whose content was omitted from WAL
-		if doc == nil && t.Path != "" && t.Content == "" {
+		if doc == nil && !t.IsDirty && t.Path != "" && t.Content == "" {
 			if fi, err := os.Stat(t.Path); err == nil && fi.Size() > 5*1024*1024 {
 				// Large file: restore tab metadata instantly, load rope in background
 				doc = &buffer.Document{
@@ -627,25 +677,12 @@ func (a *App) RestoreSession() error {
 					LoadingSize: fi.Size(),
 					ReadyCh:     make(chan struct{}),
 				}
-				targetDoc := doc
-				targetPath := t.Path
-				targetLine := t.CursorLine
-				targetCol := t.CursorCol
-				go func() {
-					payload, err := fileio.LoadFile(targetPath)
-					if err == nil {
-						defer payload.Close()
-						str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
-						buf := editor.NewBuffer(str)
-						st := &editor.State{Buffer: buf}
-						if targetLine > 0 {
-							st.GoTo(editor.Pos{Line: targetLine - 1, Col: max(0, targetCol - 1)})
-						}
-						targetDoc.SetBufferReady(buf, st)
-					}
-				}()
+				go a.loadDocument(t.Path, doc, t.CursorLine, t.CursorCol)
 			} else {
 				payload, err := fileio.LoadFile(t.Path)
+				if err != nil {
+					return fmt.Errorf("restore file %s: %w", t.Path, err)
+				}
 				if err == nil {
 					str := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
 					doc = buffer.NewDocument(t.Path, t.Title, str, t.Path)
@@ -658,13 +695,14 @@ func (a *App) RestoreSession() error {
 			doc = buffer.NewDocument(t.ID, t.Title, t.Content, t.Path)
 		}
 
-		if t.IsDirty {
+		if t.IsDirty || t.ShadowPath != "" {
 			doc.SetDirty(true)
 		} else {
 			doc.MarkSaved()
 		}
-		if t.CursorLine > 0 && doc.State != nil {
-			doc.State.GoTo(editor.Pos{Line: t.CursorLine - 1, Col: max(0, t.CursorCol - 1)})
+		if t.CursorLine > 0 && !doc.IsLoading() && doc.State != nil {
+			doc.State.GoTo(editor.Pos{Line: t.CursorLine - 1, Col: max(0, t.CursorCol-1)})
+			doc.CaretPosition()
 		}
 		a.Tabs = append(a.Tabs, doc)
 	}
@@ -687,6 +725,11 @@ func (a *App) TriggerSearch(query string) {
 	a.searchMu.Lock()
 	defer a.searchMu.Unlock()
 
+	if a.searchStopped {
+		return
+	}
+	a.searchGeneration++
+	generation := a.searchGeneration
 	// Cancel existing in-flight search
 	if a.searchCancel != nil {
 		a.searchCancel()
@@ -713,32 +756,53 @@ func (a *App) TriggerSearch(query string) {
 
 	// 300ms debounce
 	a.searchTimer = time.AfterFunc(300*time.Millisecond, func() {
-		a.executeAsyncSearch(query)
+		a.executeSearchGeneration(query, generation)
 	})
 }
 
 // executeAsyncSearch runs search in background goroutine with zero-lock and cancellation support.
 func (a *App) executeAsyncSearch(query string) {
 	a.searchMu.Lock()
+	generation := a.searchGeneration
+	a.searchMu.Unlock()
+	a.executeSearchGeneration(query, generation)
+}
+
+func (a *App) executeSearchGeneration(query string, generation uint64) {
+	a.searchMu.Lock()
+	if a.searchStopped || generation != a.searchGeneration {
+		a.searchMu.Unlock()
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.searchCancel = cancel
 	a.searchMu.Unlock()
+	defer cancel()
 
 	doc := a.ActiveDocument()
-	if doc == nil || len(query) == 0 || doc.IsLoading() {
+	if doc == nil || len(query) == 0 || doc.IsLoading() || doc.LoadingError() != nil {
+		a.searchMu.Lock()
+		defer a.searchMu.Unlock()
+		if generation != a.searchGeneration || a.searchStopped {
+			return
+		}
 		a.mu.Lock()
 		a.IsSearching = false
 		a.SearchResults = search.Result{}
 		a.mu.Unlock()
 		return
 	}
+	a.mu.Lock()
+	path := doc.Path
+	a.mu.Unlock()
+	version := doc.Buffer.Version()
 
 	var res search.Result
 	// CRITICAL ZERO-LOCK OPTIMIZATION:
 	// For clean files on disk, search directly over mmap pages!
 	// 0 locks on editor.Buffer, 0 allocations, 0ms UI freeze!
-	if doc.Path != "" && !doc.IsDirty() {
-		payload, err := fileio.LoadFile(doc.Path)
+	if path != "" && !doc.IsDirty() {
+		payload, err := fileio.LoadFile(path)
 		if err == nil {
 			res = a.SearchEngine.FindAllContext(ctx, payload.Data, []byte(query))
 			_ = payload.Close()
@@ -752,11 +816,18 @@ func (a *App) executeAsyncSearch(query string) {
 		res = a.SearchEngine.FindAllContext(ctx, []byte(content), []byte(query))
 	}
 
-	if ctx.Err() != nil {
+	a.searchMu.Lock()
+	defer a.searchMu.Unlock()
+	if ctx.Err() != nil || generation != a.searchGeneration || a.searchStopped {
 		return
 	}
-
 	a.mu.Lock()
+	if a.ActiveTab < 0 || a.ActiveTab >= len(a.Tabs) || a.Tabs[a.ActiveTab] != doc || doc.Path != path || doc.Buffer.Version() != version {
+		a.IsSearching = false
+		a.SearchResults = search.Result{}
+		a.mu.Unlock()
+		return
+	}
 	a.SearchResults = res
 	a.LastOpLatency = res.Duration
 	a.LastSearchQ = query
@@ -782,14 +853,88 @@ func (a *App) GetSearchResults() search.Result {
 func (a *App) PerformSearch(query string) {
 	doc := a.ActiveDocument()
 	if doc == nil || len(query) == 0 {
+		a.mu.Lock()
 		a.SearchResults = search.Result{}
+		a.mu.Unlock()
 		return
 	}
 
 	content := doc.Content()
 	res := a.SearchEngine.FindAll([]byte(content), []byte(query))
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.SearchResults = res
 	a.LastOpLatency = res.Duration
 	a.LastSearchQ = query
 	a.IsSearching = false
+}
+
+// recordSessionError makes failures from workflows without error returns visible.
+func (a *App) recordSessionError(err error) {
+	if err == nil {
+		return
+	}
+	a.mu.Lock()
+	a.persistErr = err
+	a.sessionRetry = true
+	a.StatusMessage = err.Error()
+	a.mu.Unlock()
+	log.Printf("gpad persistence: %v", err)
+}
+
+func (a *App) persistSession() error {
+	err := a.SaveSession()
+	a.recordSessionError(err)
+	if err == nil {
+		a.mu.Lock()
+		a.sessionRetry = false
+		a.mu.Unlock()
+	}
+	return err
+}
+
+// SessionError returns the most recent persistence failure, including shutdown.
+func (a *App) SessionError() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.persistErr
+}
+
+// loadDocument always publishes a terminal result, including failures.
+func (a *App) loadDocument(path string, doc *buffer.Document, line, col int) {
+	payload, err := fileio.LoadFile(path)
+	if err != nil {
+		doc.SetLoadError(err)
+		a.recordSessionError(err)
+		return
+	}
+	defer payload.Close()
+	// NewBuffer's rope clones each leaf; no mmap-backed string escapes this call.
+	text := unsafe.String(unsafe.SliceData(payload.Data), len(payload.Data))
+	buf := editor.NewBuffer(text)
+	if lang := editor.LanguageFor(doc.Path); lang != nil {
+		buf.SetLanguage(lang)
+	}
+	st := &editor.State{Buffer: buf}
+	if line > 0 {
+		st.GoTo(editor.Pos{Line: line - 1, Col: max(0, col-1)})
+	}
+	doc.SetBufferReady(buf, st)
+}
+
+// OperationLatency returns the last measured operation time safely across workers.
+func (a *App) OperationLatency() time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.LastOpLatency
+}
+
+// refreshDocumentSearch invalidates results from a previously active document.
+func (a *App) refreshDocumentSearch() {
+	a.mu.Lock()
+	query := a.SearchQuery
+	a.SearchResults = search.Result{}
+	a.LastSearchQ = ""
+	a.mu.Unlock()
+	a.TriggerSearch(query)
 }

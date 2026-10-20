@@ -2,12 +2,14 @@ package instance
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -88,6 +90,11 @@ type Listener struct {
 	onFocus    func(token string)
 	quit       chan struct{}
 	wg         sync.WaitGroup
+	lock       *os.File
+	stopOnce   sync.Once
+	stopErr    error
+	closeOnce  sync.Once
+	closeErr   error
 }
 
 // StartListener starts listening for file open requests from subsequent gpad processes.
@@ -100,8 +107,39 @@ func StartListener(socketPath string, onOpenFile func(path, token string), onFoc
 		return nil, err
 	}
 
-	// Remove stale socket file if it exists
-	_ = os.Remove(socketPath)
+	// Keep a stable lock inode: never unlink the lock file on shutdown.
+	lock, err := os.OpenFile(socketPath+".lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		lock.Close()
+		return nil, fmt.Errorf("instance already starting or running: %w", err)
+	}
+	success := false
+	defer func() {
+		if !success {
+			lock.Close()
+		}
+	}()
+	if st, err := os.Lstat(socketPath); err == nil {
+		if st.Mode()&os.ModeSocket == 0 {
+			return nil, fmt.Errorf("refusing to remove non-socket %s", socketPath)
+		}
+		conn, dialErr := net.DialTimeout("unix", socketPath, 200*time.Millisecond)
+		if dialErr == nil {
+			conn.Close()
+			return nil, fmt.Errorf("instance already running")
+		}
+		if !errors.Is(dialErr, syscall.ECONNREFUSED) && !errors.Is(dialErr, os.ErrNotExist) {
+			return nil, dialErr
+		}
+		if err := os.Remove(socketPath); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -110,12 +148,14 @@ func StartListener(socketPath string, onOpenFile func(path, token string), onFoc
 
 	l := &Listener{
 		path:       socketPath,
+		lock:       lock,
 		ln:         ln,
 		onOpenFile: onOpenFile,
 		onFocus:    onFocus,
 		quit:       make(chan struct{}),
 	}
 
+	success = true
 	l.wg.Add(1)
 	go l.serve()
 
@@ -136,7 +176,8 @@ func (l *Listener) serve() {
 			}
 		}
 
-		go l.handleConn(conn)
+		l.wg.Add(1)
+		go func() { defer l.wg.Done(); l.handleConn(conn) }()
 	}
 }
 
@@ -174,11 +215,24 @@ func (l *Listener) handleConn(conn net.Conn) {
 	}
 }
 
-// Close gracefully stops the listener and removes the socket file.
+// StopAccepting joins socket callbacks while retaining instance ownership.
+// Callers can finish session persistence before Close releases the lock.
+func (l *Listener) StopAccepting() error {
+	l.stopOnce.Do(func() {
+		close(l.quit)
+		l.stopErr = l.ln.Close()
+		l.wg.Wait()
+	})
+	return l.stopErr
+}
+
+// Close gracefully stops the listener and releases instance ownership.
 func (l *Listener) Close() error {
-	close(l.quit)
-	err := l.ln.Close()
-	l.wg.Wait()
-	_ = os.Remove(l.path)
-	return err
+	l.closeOnce.Do(func() {
+		l.closeErr = l.StopAccepting()
+		if err := l.lock.Close(); l.closeErr == nil {
+			l.closeErr = err
+		}
+	})
+	return l.closeErr
 }

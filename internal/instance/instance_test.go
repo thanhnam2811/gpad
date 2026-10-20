@@ -1,6 +1,8 @@
 package instance
 
 import (
+	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -100,4 +102,106 @@ func TestSingleInstance_ForwardsActivationToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestListenerRejectsSecondOwner(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "socket")
+	first, err := StartListener(path, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := StartListener(path, nil, nil)
+	if err == nil {
+		second.Close()
+		t.Fatal("second owner accepted")
+	}
+	if !TryForward(path, nil) {
+		t.Fatal("original listener displaced")
+	}
+}
+
+func TestListenerConcurrentStartup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "socket")
+	const count = 12
+	start := make(chan struct{})
+	results := make(chan *Listener, count)
+	var wg sync.WaitGroup
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); <-start; l, _ := StartListener(path, nil, nil); results <- l }()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	var winner *Listener
+	owners := 0
+	for l := range results {
+		if l != nil {
+			owners++
+			winner = l
+		}
+	}
+	if winner != nil {
+		defer winner.Close()
+	}
+	if owners != 1 {
+		t.Fatalf("owners %d", owners)
+	}
+}
+
+func TestListenerPreservesRegularFileAndReclaimsStaleSocket(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "socket")
+	if err := os.WriteFile(path, []byte("important"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if l, err := StartListener(path, nil, nil); err == nil {
+		l.Close()
+		t.Fatal("regular file replaced")
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "important" {
+		t.Fatal("file lost")
+	}
+	os.Remove(path)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.SetUnlinkOnClose(false)
+	ln.Close()
+	l, err := StartListener(path, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = l.Close(); err != nil {
+		t.Fatal("second close", err)
+	}
+}
+
+func TestListenerRetainsOwnershipDuringSessionShutdown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gpad.sock")
+	first, err := StartListener(path, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if err := first.StopAccepting(); err != nil {
+		t.Fatal(err)
+	}
+	if second, err := StartListener(path, nil, nil); err == nil {
+		second.Close()
+		t.Fatal("instance lock released before persistence closed")
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next, err := StartListener(path, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next.Close()
 }

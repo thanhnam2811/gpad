@@ -161,3 +161,123 @@ func TestSessionWALCrashRecovery_CorruptedCRC(t *testing.T) {
 		t.Fatalf("expected fallback to good data, got: %+v", recovered)
 	}
 }
+
+func TestAppendAfterCorruptTail(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = m.SaveSnapshot(SessionState{ActiveIndex: 1}); err != nil {
+		t.Fatal(err)
+	}
+	m.Close()
+	f, err := os.OpenFile(filepath.Join(dir, "session.wal"), os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte("broken"))
+	f.Close()
+	m, err = NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if err = m.SaveSnapshot(SessionState{ActiveIndex: 2}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.LoadSnapshot()
+	if err != nil || s.ActiveIndex != 2 {
+		t.Fatalf("recovery %+v %v", s, err)
+	}
+	st, _ := os.Stat(filepath.Join(dir, "session.wal"))
+	if st.Mode().Perm() != 0600 {
+		t.Fatalf("mode %o", st.Mode().Perm())
+	}
+}
+
+func TestCompactionFailureKeepsRecoverableWAL(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if err = m.SaveSnapshot(SessionState{ActiveIndex: 1}); err != nil {
+		t.Fatal(err)
+	}
+	// Deterministically force rename failure without touching user resources.
+	oldPath := m.walPath
+	m.walPath = filepath.Join(m.dir, "missing", "session.wal")
+	m.appends = 100
+	if err = m.SaveSnapshot(SessionState{ActiveIndex: 2}); err == nil {
+		t.Fatal("expected compaction failure")
+	}
+	m.walPath = oldPath
+	st, err := m.LoadSnapshot()
+	if err != nil || st.ActiveIndex != 1 {
+		t.Fatalf("prior snapshot lost: %+v %v", st, err)
+	}
+}
+
+func TestCorruptLengthAndPartialHeaderRecovery(t *testing.T) {
+	for _, tail := range [][]byte{{'G', 'P'}, append(append([]byte{}, walMagic[:]...), []byte{'G', 'P', 'W', '1', 255, 255, 255, 255, 0, 0, 0, 0}...)} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "session.wal"), tail, 0600); err != nil {
+			t.Fatal(err)
+		}
+		m, err := NewManager(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = m.SaveSnapshot(SessionState{ActiveIndex: 4}); err != nil {
+			t.Fatal(err)
+		}
+		st, err := m.LoadSnapshot()
+		m.Close()
+		if err != nil || st.ActiveIndex != 4 {
+			t.Fatalf("recovered %+v %v", st, err)
+		}
+	}
+}
+
+func TestAuditLegacyDirectoryPrivate(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	st, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0700 {
+		t.Fatalf("legacy directory mode %o", st.Mode().Perm())
+	}
+}
+
+func TestAuditFailedRollbackDisablesWAL(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A read-only descriptor deterministically fails both append and rollback.
+	path := m.walPath
+	m.walFile.Close()
+	m.walFile, err = os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SaveSnapshot(SessionState{ActiveIndex: 1}); err == nil {
+		t.Fatal("write failure hidden")
+	}
+	if m.walFile != nil {
+		t.Fatal("failed rollback left WAL writable")
+	}
+	if err := m.SaveSnapshot(SessionState{ActiveIndex: 2}); err == nil {
+		t.Fatal("disabled WAL reported success")
+	}
+}

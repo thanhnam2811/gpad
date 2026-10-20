@@ -103,57 +103,57 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 			content: func() {
 				renderMenuItem(c, t, "undo", "Undo", u.keyRegistry.ShortcutString(keybind.ActionEditUndo), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.Undo)
 					}
 				})
 				renderMenuItem(c, t, "redo", "Redo", u.keyRegistry.ShortcutString(keybind.ActionEditRedo), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.Redo)
 					}
 				})
 				renderMenuSeparator(c, t)
 				renderMenuItem(c, t, "cut", "Cut", u.keyRegistry.ShortcutString(keybind.ActionEditCut), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.Cut)
 					}
 				})
 				renderMenuItem(c, t, "copy", "Copy", u.keyRegistry.ShortcutString(keybind.ActionEditCopy), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.Copy)
 					}
 				})
 				renderMenuItem(c, t, "paste", "Paste", u.keyRegistry.ShortcutString(keybind.ActionEditPaste), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.Paste)
 					}
 				})
 				renderMenuItem(c, t, "select-all", "Select All", u.keyRegistry.ShortcutString(keybind.ActionEditSelectAll), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.SelectAll)
 					}
 				})
 				renderMenuSeparator(c, t)
 				renderMenuItem(c, t, "duplicate-line", "Duplicate Line", u.keyRegistry.ShortcutString(keybind.ActionEditDupLine), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.DuplicateLinesDown)
 					}
 				})
 				renderMenuItem(c, t, "delete-line", "Delete Line", u.keyRegistry.ShortcutString(keybind.ActionEditDelLine), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.DeleteLine)
 					}
 				})
 				renderMenuItem(c, t, "toggle-comment", "Toggle Line Comment", u.keyRegistry.ShortcutString(keybind.ActionEditToggleComment), false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						doc.State.Run(editor.ToggleComment)
 					}
 				})
@@ -197,7 +197,7 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 			width: 200,
 			content: func() {
 				wrapLabel := "Toggle Word Wrap"
-				if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil && doc.State.IsSoftWrap() {
+				if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil && doc.State.IsSoftWrap() {
 					wrapLabel = "✓ Word Wrap"
 				}
 				renderMenuItem(c, t, "word-wrap", wrapLabel, u.keyRegistry.ShortcutString(keybind.ActionViewToggleWrap), false, func() {
@@ -206,7 +206,7 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 				})
 				renderMenuItem(c, t, "line-numbers", "Toggle Line Numbers", "", false, func() {
 					u.activeMenu = ""
-					if doc := u.app.ActiveDocument(); doc != nil && doc.State != nil {
+					if doc := u.app.ActiveDocument(); doc != nil && !doc.IsLoading() && doc.State != nil {
 						if doc.State.LineNumbers == editor.LineNumbersOff {
 							doc.State.LineNumbers = editor.LineNumbersOn
 						} else {

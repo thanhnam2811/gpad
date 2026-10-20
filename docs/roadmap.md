@@ -118,6 +118,23 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Benchmark Candidate A vs Candidate B `[PERF-011]` (26.3µs toolbar, 24.4µs menubar, 50% fewer allocs).
 - [x] Final audit by `[Agent-4]` and Phase 13 Git Commit.
 
+### Reliability Audit: Verified Persistence, Ownership & Lifecycle [IN PROGRESS]
+
+Scope is limited to the ten reported findings and closely related defects proven by regression tests. Milestone claims above are historical; this audit independently verifies their relevant guarantees.
+
+- [x] `[Agent-1]` establish package ownership and ordered review gates.
+- [ ] `[Agent-2]` trace and reproduce each finding before production changes; retain evidence in `AUDIT_VERIFICATION.md`.
+- [ ] Verify `fileio` atomic replacement, permissions, symlink semantics, directory durability, and mmap ownership across `buffer` and the vendored editor.
+- [ ] Verify `session` WAL append/compaction/replay failure boundaries and private storage permissions; preserve recoverable committed snapshots.
+- [ ] Verify `instance` exclusive socket ownership, concurrent startup, stale socket recovery, and cleanup ownership.
+- [ ] Verify `app` shadow-before-snapshot ordering, persistence error reporting, joined autosave shutdown, asynchronous load completion, and search generation/cancellation.
+- [ ] `[Agent-3]` inspect UI error presentation and lifecycle integration while preserving compact native layout and existing interfaces where practical.
+- [ ] Run isolated regression/failure-injection/crash/corruption tests, build, full tests, race detector, vet, and relevant local benchmarks; document blockers accurately.
+- [ ] Record correctness/performance decisions and measured evidence in `docs/perf-decisions.md`; prioritize data integrity over latency.
+- [ ] `[Agent-4]` independently review the complete final diff and evidence; require explicit **APPROVED** before any commit.
+
+Boundary rules: filesystem and mapping primitives stay in `fileio`; WAL format and durable replay stay in `session`; IPC ownership stays in `instance`; document/editor ownership stays in `buffer`; orchestration and cancellation stay in `app`; native presentation stays in `ui`. Core packages must not import `app` or `ui`, and fixes must not introduce circular dependencies. Publish durable shadow content before a WAL record references it, retaining prior recoverable data on failure. Shutdown must join producers before closing persistence resources. Asynchronous results must prove they still belong to the current document/query generation before publication.
+
 
 
 

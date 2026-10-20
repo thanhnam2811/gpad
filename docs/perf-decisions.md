@@ -29,6 +29,7 @@
 | `[PERF-013]` | `internal/keybind` | Hardcoded Desynchronized Shortcut Bindings | Hash-Packed Action Registry | 24.5 ns/op lookup, 0 B/op, 0 allocs/op | `[Agent-4]` APPROVED |
 | `[PERF-014]` | `internal/ui` | Native GTK Menu Theming & Context Popup Clashing | 100% In-Window OpenGL PopoverBase Menus | 0.27 ms frame render (<3.3% of 120Hz frame budget) | `[Agent-4]` APPROVED |
 | `[PERF-015]` | `internal/ui` | Stale Frame-Budget Metric & Session-Polluting Benchmarks | Re-measured Virtualized Editor on an Isolated Session | 0.123 ms/frame (1.5% of 120Hz budget), 58 allocs/frame | `[Agent-4]` APPROVED |
+| `[PERF-016]` | `fileio/session/app/instance` | Recovery data loss and unsafe lifecycle ordering | Durable atomic saves, immutable drafts, serialized IPC and joined shutdown | Durable WAL 6.12–9.98 ms/op; correctness prioritized | `[Agent-4]` APPROVED |
 
 ---
 
@@ -683,3 +684,53 @@ Five runs each, all within ±4% of the values above.
 - **Auditor**: `[Agent-4: Red-Team Reviewer & QA Gatekeeper]`
 - **Status**: **APPROVED** (numbers reproducible across 5 counts; the contaminated 8.4 ms/op reading is
   kept above as the reason the harness is now isolated)
+
+## [PERF-016] Audit reliability: durable replacement and WAL (2026-10-20)
+
+Decision: prioritize committed-data durability over write throughput. SaveFile now stages in the destination directory, preserves existing regular-file permissions, follows existing symlinks, fsyncs the staged file, renames, and fsyncs the containing directory. Dangling symlinks are rejected without replacement. WAL frames are emitted in one checked write, fsynced before success, and truncated back on append failure. Compaction reuses durable atomic replacement and always reopens the pathname (including failure after rename) so subsequent appends cannot silently target an unlinked inode. Startup bounds frame allocations by remaining file size and truncates invalid tails before any new append. Existing WAL permissions are tightened to 0600; new directories use 0700.
+
+Reproductions against original production code: `TestSavePreservesModeAndSymlink` failed with “symlink replaced”; `TestAppendAfterCorruptTail` recovered ActiveIndex 1 after successfully saving 2; `TestListenerRejectsSecondOwner` accepted a second owner. These tests pass with the fixes. IPC adds stable inode flock serialization (lock files deliberately persist), rejects active owners and non-socket entries, safely reclaims ECONNREFUSED sockets, and closes idempotently while waiting for accepted handlers. Twelve simultaneous isolated startups yield one owner.
+
+Benchmarks ran directly on Intel i5-7500 linux/amd64, using `go test ./internal/fileio ./internal/session -run '^$' -bench BenchmarkAudit -benchmem -count=5 -benchtime=200ms`. Baseline source was copied from HEAD to an isolated /tmp module with identical BenchmarkAudit functions. Each row lists five independent runs; snapshot payload is a synthetic 4096-byte string (JSON escaping expands NUL bytes). These compare the existing implementation to the correctness-preserving candidate; an additional algorithm cannot relax the required durability contract, so no speculative throughput-based algorithm choice was made.
+
+| Variant | ns/op, five runs | B/op, five runs | allocs/op |
+|---|---|---|---|
+| Original SaveFile | 6192804, 6554043, 10614196, 27408414, 7513488 | 521, 521, 520, 525, 521 | 9 |
+| Durable SaveFile | 13361636, 11261804, 12323249, 12617997, 11735266 | 2488, 2500, 2502, 2485, 2501 | 33 |
+| Original snapshot | 216938, 202061, 200678, 200148, 201645 | 28036, 27794, 28084, 28309, 27960 | 5 |
+| Durable snapshot | 6303152, 6245930, 9982158, 6123133, 6455428 | 54845, 57564, 57805, 57895, 57424 | 6 |
+
+The original save has substantial storage latency variance (6.19–27.4 ms), so these short measurements do not establish a precise ratio. Durable save ranges 11.26–13.36 ms; durable WAL ranges 6.12–9.98 ms versus original 0.200–0.217 ms because the old implementation acknowledged unsynced writes. These costs are accepted to prevent lost acknowledged recovery snapshots; no claim of a speed improvement is made. Targeted `go test -race ./internal/fileio ./internal/session ./internal/instance` passes. Unix socket tests require execution outside the restricted sandbox (setsockopt is denied inside); all test resources are temporary.
+
+### Audit app/UI transaction and lifecycle decision
+
+Shadow drafts now use immutable private generations. An existing checkpoint's draft is
+retained until the referencing replacement WAL frame has been fsynced; filename identity is
+independent of document basename. This removes truncation/collision failure modes rather
+than choosing a faster algorithm. Error-returning workflows propagate checkpoint failures;
+void workflows retain a logged/visible error and retry autosave. Autosave joins before final
+persistence closure, and the IPC flock remains owned until then. Search publication uses
+query generation plus document/version/path validation; buffer publication is synchronized.
+The mmap-to-rope ownership path remains unchanged because rope leaf construction clones text.
+
+Five-run headless UI benchmarks (`-bench BenchmarkUI_Render -benchmem -count=5
+-benchtime=100ms`) measured steady 0.127–0.308 ms/frame, typing 0.743–2.076 ms/frame,
+large document 0.333–0.656 ms/frame. Tab switch includes synchronous fsynced persistence and
+measured 6.93–20.82 ms/op, sometimes above the 8.3 ms goal. These runs overlapped other tests;
+variance is high and no precise speed ratio is inferred. Steady/large frames retain 58/84
+allocations respectively. Durability is prioritized; zero-allocation rendering remains an
+existing unmet goal. Full details, limitations and regressions are in AUDIT_VERIFICATION.md.
+
+The broader benchmark smoke run completed durable save, WAL, IPC and shadow-persistence
+candidates with `-count=5 -benchtime=1x`. Existing full-string hybrid-search candidate A was
+stopped after about 90 seconds without its first sample (repeated whole-suffix conversion);
+no numbers are invented for this harness, and it was left unchanged.
+
+Final audit review: **APPROVED — Agent-4 QA Gatekeeper** after complete-diff review and passing final build/test/race/vet checks. The approval covers the audited patch with the explicit limitations in AUDIT_VERIFICATION.md; it does not claim that the existing zero-allocation or all-frame latency targets are met.
+
+Pre-commit validation rerun (same host, `-bench BenchmarkAudit -benchmem -count=5
+-benchtime=200ms`) passed. Raw ns/op samples: SaveFile 13377974, 14693019,
+14258419, 13920405, 14131835 (2492–2508 B/op; 33 allocs/op); WAL 20183953,
+9219584, 6015150, 6730394, 6253430 (57492–60006 B/op; 6 allocs/op).
+Storage variance remains substantial; these samples do not replace the earlier baseline
+comparison or establish a precise latency ratio. Build, full tests, race and vet reruns passed.
