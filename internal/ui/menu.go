@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"gpad/internal/buildinfo"
+	"runtime"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui/editor"
@@ -352,8 +354,8 @@ func BuildAppMenu(application *app.App, gui *UI, win *mygo.Window) *mygo.Menu {
 					Click: func(item *mygo.MenuItem, w *mygo.Window) {
 						_, _ = mygo.Dialog.Message(mygo.MessageOptions{
 							Title:   "About Gopad++",
-							Message: "Gopad++ v0.1.0-alpha\nHigh-Density Native Text Editor",
-							Detail:  fmt.Sprintf("Engine: Pure Go & mygo/ui (Purego GPU OpenGL)\nHost: Ubuntu 24.04.5 LTS (GNOME 46)\nZero WebView • Zero Electron • 120Hz Target"),
+							Message: buildinfo.String(),
+							Detail:  fmt.Sprintf("Engine: Pure Go & mygo/ui (Purego GPU OpenGL)\nHost: %s/%s\nZero WebView • Zero Electron • 120Hz Target", runtime.GOOS, runtime.GOARCH),
 							Parent:  w,
 						})
 					},

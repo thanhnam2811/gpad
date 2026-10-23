@@ -1,39 +1,33 @@
-name: CI Pipeline
-
+name: CI
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
-
+    branches: [main]
+permissions:
+  contents: read
 jobs:
-  build-and-test:
-    name: Build & Test (Linux)
-    runs-on: ubuntu-latest
-
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          go-version: '1.24'
-          check-latest: true
-
-      - name: Install Linux Dependencies
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          check-latest: false
+      - run: python3 scripts/check-assets.py
+      - run: python3 scripts/test-release.py
+      - run: go mod verify
+      - run: go build ./...
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: go vet ./...
+      - name: Validate desktop metadata
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
-
-      - name: Verify Dependencies
-        run: go mod verify
-
-      - name: Build Binary
-        run: go build -v ./cmd/gpad
-
-      - name: Run Unit Tests
-        run: go test -v ./...
-
-      - name: Run Race Detector
-        run: go test -race -v ./...
+          sudo apt-get install -y desktop-file-utils appstream
+          desktop-file-validate packaging/gpad.desktop
+          appstreamcli validate --no-net packaging/io.github.thanhnam2811.gpad.metainfo.xml

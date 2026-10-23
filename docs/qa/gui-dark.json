@@ -1,0 +1,15 @@
+{
+  "display": "private Xvfb / X11, software OpenGL",
+  "theme": "dark",
+  "binary_sha256": "be8035e2d29ddd53e31bfe82bafe6d5f51da85d2449a5035301c9d10f2691f99",
+  "version": "Gopad++ 0.1.0-rc.1 (commit 0af66fbf9b2103222009907f08ab516e022fa4a4-dirty, built 2026-10-20T09:54:00Z)",
+  "startup": "PASS",
+  "window_class": "WM_CLASS(STRING) = \"gpad\", \"Gpad\"",
+  "window_icon": "PASS (128 x 128 _NET_WM_ICON)",
+  "keyboard_edit_and_save": "PASS",
+  "find_and_menu_capture": "PASS (visually inspect captures)",
+  "single_instance_forwarding": "PASS (client returned; inspect session)",
+  "crash_recovery": "PASS (WAL draft + restored window; inspect capture)",
+  "graceful_shutdown": "PASS",
+  "private_resources_only": true
+}

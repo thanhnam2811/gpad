@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"gpad/internal/app"
+	"gpad/internal/buildinfo"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -15,7 +16,9 @@ import (
 // that developer happened to have open.
 func newTestApp(tb testing.TB) *app.App {
 	tb.Helper()
-	return app.NewAppWithSessionDir(tb.TempDir())
+	application := app.NewAppWithSessionDir(tb.TempDir())
+	tb.Cleanup(application.Stop)
+	return application
 }
 
 func TestUIHeadlessComponents(t *testing.T) {
@@ -165,7 +168,7 @@ func TestAboutInWindowModal(t *testing.T) {
 	tester.Frame()
 
 	// 4. Verify in-window modal rendered texts
-	if !tester.HasText("v0.1.0-alpha • High-Density Native Text Editor") {
+	if !tester.HasText(buildinfo.String()) {
 		t.Fatalf("expected version info in About modal, texts: %v", tester.Texts())
 	}
 	if !tester.HasText("Pure Go & mygo/ui (Purego GPU OpenGL)") {

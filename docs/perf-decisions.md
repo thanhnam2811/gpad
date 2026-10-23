@@ -31,6 +31,9 @@
 | `[PERF-015]` | `internal/ui` | Stale Frame-Budget Metric & Session-Polluting Benchmarks | Re-measured Virtualized Editor on an Isolated Session | 0.123 ms/frame (1.5% of 120Hz budget), 58 allocs/frame | `[Agent-4]` APPROVED |
 | `[PERF-016]` | `fileio/session/app/instance` | Recovery data loss and unsafe lifecycle ordering | Durable atomic saves, immutable drafts, serialized IPC and joined shutdown | Durable WAL 6.12–9.98 ms/op; correctness prioritized | `[Agent-4]` APPROVED |
 
+| `[PERF-017]` | `release tooling` | Unverifiable release inputs | Deterministic Go/archive builds, checksums, atomic install | Two independent frozen-source archives matched; final candidate proof external | `[Agent-4]` APPROVED |
+| `[PERF-018]` | `native UI / CLI` | Inconsistent identity and desktop startup effects | Explicit launcher install, shared build identity, theme and shortcut fixes | 125966–133894 ns/frame; 2001 B/op; 58 allocs/op | `[Agent-4]` APPROVED |
+
 ---
 
 ## [PERF-001] Large File Ingestion & Memory Zero-Copy Architecture
@@ -734,3 +737,76 @@ Pre-commit validation rerun (same host, `-bench BenchmarkAudit -benchmem -count=
 9219584, 6015150, 6730394, 6253430 (57492–60006 B/op; 6 allocs/op).
 Storage variance remains substantial; these samples do not replace the earlier baseline
 comparison or establish a precise latency ratio. Build, full tests, race and vet reruns passed.
+
+## [PERF-017] — Reproducible release tooling (2026-10-20)
+
+Release identity lives in `internal/buildinfo` and is overridden at link time. Artifacts use `CGO_ENABLED=0`, `mygo_noinspector`, `-trimpath`, `-buildvcs=false`, and an empty Go build ID; tar metadata and gzip headers are normalized. Dirty source is explicitly stamped and cannot claim a non-development version without an explicit local override. No runtime performance path changed, so algorithm benchmarks do not apply. Two independent frozen source copies produced identical archives (SHA256 `75a3b25891adc54fba16a72152d17e18e212c6665f0b0c1b1e98d951de206aa2`); later packaging-only additions still require final candidate verification. Installers stage a new executable inode in the destination directory and rename it: a deterministic isolated test proved a running prior executable survives replacement without ETXTBSY. Exact license notices and dependency inventory travel with the archive. ARM64 remains cross-compile-only experimental; amd64 is the native validation target.
+
+## [PERF-018] — Explicit desktop integration and native UI identity (2026-10-20)
+
+Agent-3 keeps the native editor layout unchanged while making startup behavior
+predictable. `--version` and `--help` complete before acquiring the socket or opening
+sessions; `--` preserves literal filenames. Desktop integration is now an explicit
+`--install-desktop` action instead of rewriting the user's launcher and icons on
+all launches. It honors an absolute `XDG_DATA_HOME`, uses the compatible `gpad`
+icon ID, quotes the executable through both desktop-entry and Exec argument
+escaping layers, and reports directory/write failures. Packaged installs remain
+free to provide their system desktop file without generating a user override.
+
+The embedded canonical SVG is parsed once for the About mark; release identity
+comes from `internal/buildinfo` in both About implementations and CLI output.
+Platform information uses the actual Go runtime platform. GNOME `prefer-light`
+and `default` select light mode; `prefer-dark` selects dark mode (failed settings
+queries retain the prior dark fallback). Theme changes use the existing native
+UI theme mechanism. Save-before-close failures keep the document and confirmation
+open, displaying the error; discard uses the synchronized dirty setter.
+
+These are correctness and integration choices, not alternative hot-path algorithm
+implementations. The existing steady-frame benchmark checks the render impact;
+no speculative optimization or alternate algorithm was introduced. Command:
+`go test ./internal/ui -run '^$' -bench 'BenchmarkUI_RenderSteadyFrame$' -benchmem -count=5`.
+Baseline was extracted with `git archive` from `0af66fb` into an isolated `/tmp`
+checkout. Both checkouts use synthetic documents and temporary sessions. Host:
+Linux/amd64, Intel Core i5-7500, benchmark suffix `-4`.
+
+| Tree | Raw ns/op samples | B/op | allocs/op |
+| --- | --- | --- | --- |
+| Before (`0af66fb`) | 124278, 127327, 149269, 158732, 161089 | 2001 | 58 |
+| After | 127760, 124880, 131729, 124894, 128717 | 2001 | 58 |
+
+A first changed-tree run overlapped other host work and measured 364380, 336661,
+331246, 471670, 242715 ns/op (2001–2003 B/op, 58 allocs/op). It is retained here
+rather than concealed; the second changed-tree run above followed the baseline
+to investigate that timing discrepancy. Baseline latency varies by about 30%;
+the after sample range is about 5%. These samples support unchanged allocation
+counts and no observed steady-frame regression; they do not establish a precise
+speedup, native presentation latency, or the zero-allocation target.
+
+Validation: targeted UI/CLI tests and race tests passed. Regressions cover child
+process `--version`/`--help` with untouched temporary HOME/XDG directories, literal
+`--` paths, GNOME color-scheme parsing and applied headless themes, desktop XDG
+scope/fallback, space/dollar/percent Exec escaping, installation error propagation,
+and failed save-before-close retaining content/modal before a successful retry.
+`desktop-file-validate` also accepted the generated launcher. Tests create no
+real launcher/session files and do not open or manipulate an active display.
+
+Agent-4 follow-up: informational/installation CLI failures now exit 2 before
+resource initialization; child-process regressions cover invalid flags and failed
+installation with untouched temporary session HOME. Save-before-close also checks
+the captured document identity before using its tab index, with a shifted-index
+regression proving no file is written. Global Ctrl+Q, Ctrl+O, and Ctrl+Shift+S
+now work when menus are closed; Ctrl+S uses the same Save/Save As helpers as the
+menu. Generated desktop metadata matches the packaged launcher. Targeted race
+tests, vet, and diff whitespace checks passed again after these fixes.
+The final shortcut-enabled tree was benchmarked again (`-count=5`): 130128,
+133894, 126268, 125966, 126875 ns/op; all five runs were 2001 B/op and 58 allocs/op.
+The discard button also checks document identity before modifying/closing a tab.
+
+Final OSS polish review (2026-10-23): **APPROVED — Agent-4 QA Gatekeeper**. Full uncached tests/race, build/vet, native dark/light Xvfb smoke, license/asset/metadata checks and candidate verifier/repeated-build comparison passed. Read RELEASE_READINESS.md for the distinction between a local candidate and a stable published release; no commit or publication is authorized.
+
+Pre-publication validation (2026-10-23): `go test ./internal/ui -run '^$'
+-bench 'BenchmarkUI_RenderSteadyFrame$' -benchmem -count=5 -benchtime=200ms`
+passed with raw ns/op 125605,120303,146989,132293,130984; B/op
+2003,2004,2003,2004,2003; allocations 58 in every run. The shorter validation
+window includes setup variance; no new speedup or zero-allocation claim is made.
+Build, full tests/race/vet, dependency, metadata, asset and six packaging guards passed.

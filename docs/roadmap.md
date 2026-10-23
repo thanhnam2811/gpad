@@ -118,23 +118,35 @@ A blazingly fast, lightweight, high-density native text editor for Linux (GNOME 
 - [x] Benchmark Candidate A vs Candidate B `[PERF-011]` (26.3µs toolbar, 24.4µs menubar, 50% fewer allocs).
 - [x] Final audit by `[Agent-4]` and Phase 13 Git Commit.
 
-### Reliability Audit: Verified Persistence, Ownership & Lifecycle [IN PROGRESS]
+### Reliability Audit: Verified Persistence, Ownership & Lifecycle [COMPLETED — VERIFIED AUDIT SCOPE]
 
 Scope is limited to the ten reported findings and closely related defects proven by regression tests. Milestone claims above are historical; this audit independently verifies their relevant guarantees.
 
 - [x] `[Agent-1]` establish package ownership and ordered review gates.
-- [ ] `[Agent-2]` trace and reproduce each finding before production changes; retain evidence in `AUDIT_VERIFICATION.md`.
-- [ ] Verify `fileio` atomic replacement, permissions, symlink semantics, directory durability, and mmap ownership across `buffer` and the vendored editor.
-- [ ] Verify `session` WAL append/compaction/replay failure boundaries and private storage permissions; preserve recoverable committed snapshots.
-- [ ] Verify `instance` exclusive socket ownership, concurrent startup, stale socket recovery, and cleanup ownership.
-- [ ] Verify `app` shadow-before-snapshot ordering, persistence error reporting, joined autosave shutdown, asynchronous load completion, and search generation/cancellation.
-- [ ] `[Agent-3]` inspect UI error presentation and lifecycle integration while preserving compact native layout and existing interfaces where practical.
-- [ ] Run isolated regression/failure-injection/crash/corruption tests, build, full tests, race detector, vet, and relevant local benchmarks; document blockers accurately.
-- [ ] Record correctness/performance decisions and measured evidence in `docs/perf-decisions.md`; prioritize data integrity over latency.
-- [ ] `[Agent-4]` independently review the complete final diff and evidence; require explicit **APPROVED** before any commit.
+- [x] `[Agent-2]` trace and reproduce each finding before production changes; retain evidence in `AUDIT_VERIFICATION.md`.
+- [x] Verify `fileio` atomic replacement, permissions, symlink semantics, directory durability, and mmap ownership across `buffer` and the vendored editor.
+- [x] Verify `session` WAL append/compaction/replay failure boundaries and private storage permissions; preserve recoverable committed snapshots.
+- [x] Verify `instance` exclusive socket ownership, concurrent startup, stale socket recovery, and cleanup ownership.
+- [x] Verify `app` shadow-before-snapshot ordering, persistence error reporting, joined autosave shutdown, asynchronous load completion, and search generation/cancellation.
+- [x] `[Agent-3]` inspect UI error presentation and lifecycle integration while preserving compact native layout and existing interfaces where practical.
+- [x] Run isolated regression/failure-injection/crash/corruption tests, build, full tests, race detector, vet, and relevant local benchmarks; document blockers accurately.
+- [x] Record correctness/performance decisions and measured evidence in `docs/perf-decisions.md`; prioritize data integrity over latency.
+- [x] `[Agent-4]` independently review the complete final diff and evidence; require explicit **APPROVED** before any commit.
 
 Boundary rules: filesystem and mapping primitives stay in `fileio`; WAL format and durable replay stay in `session`; IPC ownership stays in `instance`; document/editor ownership stays in `buffer`; orchestration and cancellation stay in `app`; native presentation stays in `ui`. Core packages must not import `app` or `ui`, and fixes must not introduce circular dependencies. Publish durable shadow content before a WAL record references it, retaining prior recoverable data on failure. Shutdown must join producers before closing persistence resources. Asynchronous results must prove they still belong to the current document/query generation before publication.
 
+### Open-Source Polish: Branding, Packaging & Reviewable Releases [COMPLETED — LOCAL CANDIDATE]
 
+This phase improves contributor and installation workflows without changing the audited runtime core. `AUDIT_VERIFICATION.md` and its documented limitations remain authoritative for reliability; historical performance claims must not be promoted as current measurements without verification.
 
+- [x] `[Agent-1]` inspect documentation, licensing, assets, CI, packaging gaps, and runtime boundaries; provide implementation handoff.
+- [x] `[Agent-2]` add reproducible local build/package tooling and isolated packaging validation. Use explicit target/version inputs, stable archive metadata, checksums, and bundled project/dependency license notices. Verify repeat builds rather than asserting reproducibility.
+- [x] Provide reviewable Linux desktop/icon installation assets with documented user-prefix and staging behavior. Installation must not change MIME defaults, access sessions, or require root for user-local use.
+- [x] Align CI with `go.mod`, run build/test/race/vet and package checks, and keep artifact creation distinct from publishing. No push, merge, hosted release, or publication is authorized in this phase.
+- [x] `[Agent-3]` review branding consistency and desktop integration; retain native compact layout and existing session/IPC behavior.
+- [x] Refresh README and CONTRIBUTING with accurate supported/tested platform scope, reproducible commands, benchmark context, audit limitations, install/uninstall instructions, and asset provenance.
+- [x] Run isolated GUI QA with synthetic documents, private HOME/XDG directories, runtime/socket namespace, and private display. Capture actual UI evidence without touching active Wayland windows or existing sessions; record what an Xvfb/software-GL check cannot establish.
+- [x] Record package contents, checksum/reproducibility checks, command validation, CI limitations, and GUI results in a reviewable verification document.
+- [x] `[Agent-4]` independently review the full polish diff and evidence before any commit; retain the existing performance ADR requirements for changes that actually touch performance-sensitive code.
 
+Ownership boundaries: build, package and release preparation belong in repository tooling and packaging assets; CI invokes the same local commands. Branding sources belong in `assets`, with explicit synchronization of embedded `internal/ui` icons. Avoid new dependencies or runtime abstractions for documentation and packaging. The audited `fileio`, `session`, `instance`, `buffer`, and `app` persistence/concurrency implementations are outside this phase. Any minimal version/help or desktop-integration code change must be separately justified and tested without changing normal startup/shutdown ordering. Reproducible archives must exclude local sessions, scratch files, credentials and generated build caches, and must preserve upstream license attribution.

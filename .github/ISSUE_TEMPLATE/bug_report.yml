@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible problem using synthetic content.
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: "Do not upload personal documents, session WALs, shadow drafts or credentials. See SECURITY.md for sensitive reports."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Build and environment
+      description: Paste gpad --version, distribution, architecture, desktop and X11/Wayland session type.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps and synthetic text; include expected and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Sanitized logs, screenshots or a failing test. Mention if data recovery was affected.

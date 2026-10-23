@@ -1,6 +1,10 @@
 package main
 
 import (
+	"flag"
+	"fmt"
+	"gpad/internal/buildinfo"
+	"io"
 	"log"
 	"os"
 	"sync"
@@ -15,11 +19,19 @@ import (
 )
 
 func main() {
+	files, done, err := parseCommandLine(os.Args[1:], os.Stdout)
+	if err != nil {
+		log.Print(err)
+		os.Exit(2)
+	}
+	if done {
+		return
+	}
 	sockPath := instance.SocketPath()
 
 	// 1. If another instance is running, forward the files and exit 0 immediately
-	if len(os.Args) > 1 {
-		if instance.TryForward(sockPath, os.Args[1:]) {
+	if len(files) > 0 {
+		if instance.TryForward(sockPath, files) {
 			os.Exit(0)
 		}
 	} else {
@@ -40,7 +52,7 @@ func main() {
 	if err != nil {
 		// The winning process may still be binding its socket.
 		for attempt := 0; attempt < 10; attempt++ {
-			if instance.TryForward(sockPath, os.Args[1:]) {
+			if instance.TryForward(sockPath, files) {
 				return
 			}
 			time.Sleep(20 * time.Millisecond)
@@ -84,8 +96,8 @@ func main() {
 	mygo.App.OnQuit(shutdown)
 
 	// Handle initial file arguments if passed: gpad <file1> <file2>...
-	if len(os.Args) > 1 {
-		for _, arg := range os.Args[1:] {
+	if len(files) > 0 {
+		for _, arg := range files {
 			if err := application.OpenFile(arg); err != nil {
 				log.Printf("Open file: %v", err)
 			}
@@ -93,11 +105,6 @@ func main() {
 	}
 
 	gui := gpadui.NewUI(application)
-
-	// Ensure GNOME 46 desktop entry and icon exist
-	if binPath, err := os.Executable(); err == nil {
-		_ = gpadui.EnsureDesktopEntry(binPath)
-	}
 
 	mygo.App.WhenReady(func() {
 		mainWin = mygo.NewWindow(mygo.WindowOptions{
@@ -173,4 +180,34 @@ func (q *requestQueue) setWake(wake func()) {
 	if pending {
 		wake()
 	}
+}
+
+// parseCommandLine handles informational modes before opening sessions or IPC.
+func parseCommandLine(args []string, out io.Writer) ([]string, bool, error) {
+	flags := flag.NewFlagSet("gpad", flag.ContinueOnError)
+	flags.SetOutput(out)
+	version := flags.Bool("version", false, "print build version and exit")
+	install := flags.Bool("install-desktop", false, "install a per-user desktop launcher and icons, then exit")
+	flags.Usage = func() {
+		fmt.Fprintln(out, "Usage: gpad [--version | --help | --install-desktop] [--] [files...]")
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil, true, nil
+		}
+		return nil, true, err
+	}
+	if *version {
+		fmt.Fprintln(out, buildinfo.String())
+		return nil, true, nil
+	}
+	if *install {
+		executable, err := os.Executable()
+		if err == nil {
+			err = gpadui.EnsureDesktopEntry(executable)
+		}
+		return nil, true, err
+	}
+	return flags.Args(), false, nil
 }

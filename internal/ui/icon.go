@@ -2,8 +2,11 @@ package ui
 
 import (
 	_ "embed"
+	"fmt"
+	"github.com/egoist/mygo/ui"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 //go:embed icon.png
@@ -22,38 +25,43 @@ func GetAppIconSVG() []byte {
 	return appIconSVG
 }
 
-// EnsureDesktopEntry installs the .desktop file and icon for GNOME 46.
+// aboutIcon is parsed once, never during rendering.
+var aboutIcon = ui.MustParseSVG(appIconSVG)
+
+// EnsureDesktopEntry explicitly installs the per-user launcher and icon assets.
 func EnsureDesktopEntry(binaryPath string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	if !filepath.IsAbs(binaryPath) || strings.ContainsAny(binaryPath, "\n\r\x00") {
+		return fmt.Errorf("invalid absolute executable path")
 	}
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if !filepath.IsAbs(dataHome) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	for _, asset := range []struct {
+		path string
+		data []byte
+	}{
+		{filepath.Join("icons", "hicolor", "128x128", "apps", "gpad.png"), appIconPNG},
+		{filepath.Join("icons", "hicolor", "scalable", "apps", "gpad.svg"), appIconSVG},
+		{filepath.Join("applications", "gpad.desktop"), []byte("[Desktop Entry]\nType=Application\nName=Gopad++\nGenericName=Text Editor\nComment=Compact native text editor\nExec=" + desktopExec(binaryPath) + " %F\nIcon=gpad\nTerminal=false\nCategories=Utility;TextEditor;\nMimeType=text/plain;\nStartupWMClass=gpad\n")},
+	} {
+		target := filepath.Join(dataHome, asset.path)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("create launcher directory: %w", err)
+		}
+		if err := os.WriteFile(target, asset.data, 0644); err != nil {
+			return fmt.Errorf("install %s: %w", asset.path, err)
+		}
+	}
+	return nil
+}
 
-	// 1. Write icon PNG and SVG
-	iconDir := filepath.Join(home, ".local", "share", "icons", "hicolor", "128x128", "apps")
-	_ = os.MkdirAll(iconDir, 0o755)
-	iconPath := filepath.Join(iconDir, "gpad.png")
-	_ = os.WriteFile(iconPath, GetAppIconPNG(), 0o644)
-
-	svgDir := filepath.Join(home, ".local", "share", "icons", "hicolor", "scalable", "apps")
-	_ = os.MkdirAll(svgDir, 0o755)
-	_ = os.WriteFile(filepath.Join(svgDir, "gpad.svg"), GetAppIconSVG(), 0o644)
-
-	// 2. Write gpad.desktop
-	desktopDir := filepath.Join(home, ".local", "share", "applications")
-	_ = os.MkdirAll(desktopDir, 0o755)
-	desktopPath := filepath.Join(desktopDir, "gpad.desktop")
-
-	desktopContent := "[Desktop Entry]\n" +
-		"Type=Application\n" +
-		"Name=Gopad++\n" +
-		"Comment=High-Density Native Text Editor\n" +
-		"Exec=" + binaryPath + " %F\n" +
-		"Icon=" + iconPath + "\n" +
-		"Terminal=false\n" +
-		"Categories=Development;TextEditor;Utility;\n" +
-		"MimeType=text/plain;text/x-go;text/x-c;text/x-c++;text/markdown;\n" +
-		"StartupNotify=true\n"
-
-	return os.WriteFile(desktopPath, []byte(desktopContent), 0o644)
+func desktopExec(path string) string {
+	// First quote the Exec argument, then escape the desktop entry string layer.
+	quoted := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "`", "\\`", "$", `\$`, "%", "%%").Replace(path)
+	return `"` + strings.ReplaceAll(quoted, `\`, `\\`) + `"`
 }

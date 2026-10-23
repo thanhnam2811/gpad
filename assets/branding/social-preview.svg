@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <title>Gopad++ — A compact native text editor for Linux</title>
+  <desc>Project social preview. Editable vector artwork, MIT.</desc>
+  <rect width="1280" height="640" fill="#111820"/>
+  <rect x="64" y="64" width="1152" height="512" rx="32" fill="#192633"/>
+  <path d="M64 480h1152v64a32 32 0 0 1-32 32H96a32 32 0 0 1-32-32Z" fill="#16212c"/>
+  <g transform="translate(105 188) scale(1.8)">
+  <rect x="8" y="12" width="112" height="112" rx="26" fill="#0b121b"/>
+  <rect x="8" y="4" width="112" height="112" rx="26" fill="#192633"/>
+  <path d="M34 4h60a26 26 0 0 1 26 26v30H8V30A26 26 0 0 1 34 4Z" fill="#213140"/>
+  <path d="M68 34H52C37 34 28 45 28 61s9 28 24 28h16V65H53"
+        fill="none" stroke="#38c9e8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M77 64h14m-7-7v14m14-7h14m-7-7v14"
+        fill="none" stroke="#72e0b1" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g font-family="DejaVu Sans, sans-serif">
+    <text x="390" y="276" fill="#f3f6f8" font-size="70" font-weight="700">Gopad++</text>
+    <text x="394" y="338" fill="#b8c9d6" font-size="28">A compact native text editor for Linux.</text>
+    <text x="394" y="389" fill="#72e0b1" font-size="22">Tabs · Find &amp; replace · Session recovery</text>
+    <text x="104" y="535" fill="#b8c9d6" font-size="21">github.com/thanhnam2811/gpad</text>
+    <text x="1050" y="535" fill="#38c9e8" font-size="21">MIT</text>
+  </g>
+</svg>

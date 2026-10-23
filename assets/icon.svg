@@ -1,72 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <defs>
-    <!-- Glow Neon Filter -->
-    <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="3.5" result="blur" />
-      <feMerge>
-        <feMergeNode in="blur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-
-    <!-- Base Plate Dark Background -->
-    <linearGradient id="bg-box" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#111827" />
-      <stop offset="100%" stop-color="#030712" />
-    </linearGradient>
-
-    <!-- Multi-stop Laser Border (Cyan -> Dark Slate -> Emerald -> Go Cyan) -->
-    <linearGradient id="laser-border" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#00F2FE" />
-      <stop offset="45%" stop-color="#1E293B" />
-      <stop offset="80%" stop-color="#38EF7D" />
-      <stop offset="100%" stop-color="#00ADD8" />
-    </linearGradient>
-
-    <!-- Cyan to Deep Blue Gradient for G -->
-    <linearGradient id="g-cyan" x1="20" y1="20" x2="90" y2="90" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#80f4ff" />
-      <stop offset="50%" stop-color="#00add8" />
-      <stop offset="100%" stop-color="#0072ff" />
-    </linearGradient>
-
-    <!-- Emerald to Mint Gradient for ++ -->
-    <linearGradient id="plus-grad" x1="76" y1="62" x2="111" y2="76" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#38ef7d" />
-      <stop offset="100%" stop-color="#00f5a0" />
-    </linearGradient>
-  </defs>
-
-  <!-- 1. Squircle Base Plate -->
-  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg-box)" />
-  <rect x="8" y="8" width="112" height="112" rx="26" fill="none" stroke="url(#laser-border)" stroke-width="1.8" />
-
-  <!-- 2. 120 FPS Scanlines (Subtle 6% Opacity) -->
-  <g opacity="0.06" stroke="#38bdf8" stroke-width="1">
-    <line x1="16" y1="32" x2="112" y2="32" />
-    <line x1="16" y1="48" x2="112" y2="48" />
-    <line x1="16" y1="64" x2="112" y2="64" />
-    <line x1="16" y1="80" x2="112" y2="80" />
-    <line x1="16" y1="96" x2="112" y2="96" />
-  </g>
-
-  <!-- 3. Crisp Code Indentation Lines at Corners -->
-  <path d="M18 24H32M18 30H25M98 96H110M104 102H110" stroke="#38ef7d" stroke-opacity=".5" stroke-width="1.8" stroke-linecap="round" />
-
-  <!-- 4. Iconic Glowing Neon 'G' -->
-  <g filter="url(#neon-glow)" fill="none" stroke="url(#g-cyan)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M74 30H53C34 30 25 44 25 62 S36 94 53 94H74V69H56" />
-  </g>
-
-  <!-- 5. Dual '++' with Cutout Mask & Glow -->
-  <!-- Layer A: Dark mask to eliminate stroke clash -->
-  <g stroke="#030712" stroke-width="8" stroke-linecap="round">
-    <path d="M76 69H90M83 62V76" />
-    <path d="M97 69H111M104 62V76" />
-  </g>
-  <!-- Layer B: Glowing Emerald Pluses -->
-  <g stroke="url(#plus-grad)" stroke-width="5" stroke-linecap="round" filter="url(#neon-glow)">
-    <path d="M76 69H90M83 62V76" />
-    <path d="M97 69H111M104 62V76" />
-  </g>
+  <title>Gopad++</title>
+  <desc>A cyan G and two mint plus signs on a rounded slate tile.</desc>
+  <!-- Original Gopad++ artwork, MIT; see LICENSE and BRANDING.md. -->
+  <rect x="8" y="12" width="112" height="112" rx="26" fill="#0b121b"/>
+  <rect x="8" y="4" width="112" height="112" rx="26" fill="#192633"/>
+  <path d="M34 4h60a26 26 0 0 1 26 26v30H8V30A26 26 0 0 1 34 4Z" fill="#213140"/>
+  <path d="M68 34H52C37 34 28 45 28 61s9 28 24 28h16V65H53"
+        fill="none" stroke="#38c9e8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M77 64h14m-7-7v14m14-7h14m-7-7v14"
+        fill="none" stroke="#72e0b1" stroke-width="5" stroke-linecap="round"/>
 </svg>

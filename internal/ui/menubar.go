@@ -29,49 +29,9 @@ func (u *UI) renderMenuBar(c *ui.Context, t *ui.Theme) {
 					u.app.NewTab("", "")
 					u.activeMenu = ""
 				})
-				renderMenuItem(c, t, "open-file", "Open File...", u.keyRegistry.ShortcutString(keybind.ActionFileOpen), false, func() {
-					u.activeMenu = ""
-					paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-						Title: "Open File - Gopad++",
-					})
-					if err == nil && len(paths) > 0 {
-						_ = u.app.OpenFile(paths[0])
-					}
-				})
-				renderMenuItem(c, t, "save", "Save", u.keyRegistry.ShortcutString(keybind.ActionFileSave), false, func() {
-					u.activeMenu = ""
-					doc := u.app.ActiveDocument()
-					if doc != nil {
-						if doc.Path == "" {
-							path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-								Title:       "Save As - Gopad++",
-								DefaultPath: doc.Title + ".txt",
-							})
-							if err == nil && path != "" {
-								_ = u.app.SaveActiveFileAs(path)
-							}
-						} else {
-							_ = u.app.SaveActiveFile()
-						}
-					}
-				})
-				renderMenuItem(c, t, "save-as", "Save As...", u.keyRegistry.ShortcutString(keybind.ActionFileSaveAs), false, func() {
-					u.activeMenu = ""
-					doc := u.app.ActiveDocument()
-					if doc != nil {
-						defaultPath := doc.Path
-						if defaultPath == "" {
-							defaultPath = doc.Title + ".txt"
-						}
-						path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-							Title:       "Save As - Gopad++",
-							DefaultPath: defaultPath,
-						})
-						if err == nil && path != "" {
-							_ = u.app.SaveActiveFileAs(path)
-						}
-					}
-				})
+				renderMenuItem(c, t, "open-file", "Open File...", u.keyRegistry.ShortcutString(keybind.ActionFileOpen), false, func() { u.activeMenu = ""; u.openFileDialog() })
+				renderMenuItem(c, t, "save", "Save", u.keyRegistry.ShortcutString(keybind.ActionFileSave), false, func() { u.activeMenu = ""; u.saveFileDialog(false) })
+				renderMenuItem(c, t, "save-as", "Save As...", u.keyRegistry.ShortcutString(keybind.ActionFileSaveAs), false, func() { u.activeMenu = ""; u.saveFileDialog(true) })
 				renderMenuSeparator(c, t)
 				renderMenuItem(c, t, "close-tab", "Close Tab", u.keyRegistry.ShortcutString(keybind.ActionFileCloseTab), false, func() {
 					u.activeMenu = ""

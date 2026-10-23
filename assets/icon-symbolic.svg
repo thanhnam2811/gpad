@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 128 128">
+  <title>Gopad++ symbolic</title>
+  <!-- Monochrome variant; desktop themes may recolor the foreground. MIT. -->
+  <g fill="none" stroke="#2e3436" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M68 30H50C32 30 21 43 21 63s11 33 29 33h18V67H49" stroke-width="12"/>
+    <path d="M78 64h14m-7-7v14m14-7h14m-7-7v14" stroke-width="7"/>
+  </g>
+</svg>

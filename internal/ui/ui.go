@@ -2,8 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"gpad/internal/buildinfo"
 	"math"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"gpad/internal/app"
@@ -21,6 +23,7 @@ type ConfirmCloseState struct {
 	Open     bool
 	Doc      *buffer.Document
 	TabIndex int
+	Error    string
 }
 
 // EditorContextMenuState stores data for the in-window editor context menu.
@@ -107,13 +110,14 @@ func (u *UI) RequestCloseTab(idx int) {
 // detectGnomeDarkMode queries GNOME 46 color-scheme setting.
 func detectGnomeDarkMode() bool {
 	out, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "color-scheme").Output()
-	if err == nil {
-		str := strings.TrimSpace(string(out))
-		if strings.Contains(str, "prefer-dark") {
-			return true
-		}
+	if err != nil {
+		return true
 	}
-	return true // Default dark for GNOME modern desktop
+	return gnomeDarkPreference(string(out))
+}
+
+func gnomeDarkPreference(value string) bool {
+	return strings.Trim(strings.TrimSpace(value), "\"'") == "prefer-dark"
 }
 
 const (
@@ -171,12 +175,25 @@ func (u *UI) applyFontSize() {
 func (u *UI) Render(c *ui.Context) {
 	// Theme synchronization with GNOME 46
 	t := c.Theme()
-	if u.isDark && !t.Dark {
-		c.SetTheme(ui.DarkTheme())
+	if u.isDark != t.Dark {
+		if u.isDark {
+			c.SetTheme(ui.DarkTheme())
+		} else {
+			c.SetTheme(ui.LightTheme())
+		}
 		t = c.Theme()
 	}
 
-	// Global keyboard shortcuts
+	// Global keyboard shortcuts remain active when their menus are closed.
+	if c.Shortcut(ui.Cmd, ui.KeyQ) {
+		mygo.App.Quit()
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyO) {
+		u.openFileDialog()
+	}
+	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyS) {
+		u.saveFileDialog(true)
+	}
 	if c.Shortcut(ui.Cmd, ui.KeyN) {
 		u.app.NewTab("", "")
 	}
@@ -197,7 +214,7 @@ func (u *UI) Render(c *ui.Context) {
 		}
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyS) {
-		_ = u.app.SaveActiveFile()
+		u.saveFileDialog(false)
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
 		u.OpenFind()
@@ -309,6 +326,9 @@ func (u *UI) Render(c *ui.Context) {
 				msg := fmt.Sprintf("Do you want to save changes to \"%s\"?", title)
 				ui.Text(c, msg).FontSize(12).TextColor(t.Text)
 				ui.Text(c, "Your changes will be lost if you don't save them.").FontSize(11).TextColor(t.TextMuted)
+				if u.confirmClose.Error != "" {
+					ui.Text(c, u.confirmClose.Error).FontSize(11).TextColor(t.Text)
+				}
 
 				ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Margin(8, 0, 0, 0).Children(func() {
 					cancelBtn := ui.ButtonBase(c.Key("confirm-cancel")).Height(24).Padding(2, 10).Radius(4).Border(1, t.Border)
@@ -330,9 +350,13 @@ func (u *UI) Render(c *ui.Context) {
 						ui.Text(c, "Don't Save").FontSize(11).TextColor(t.Text)
 					})
 					if discardBtn.Clicked() {
-						doc.Dirty = false
-						u.app.CloseTab(tabIdx)
-						u.confirmClose.Open = false
+						if tabIdx < 0 || tabIdx >= len(u.app.Tabs) || u.app.Tabs[tabIdx] != doc {
+							u.confirmClose.Error = "Document changed while confirmation was open; close it again"
+						} else {
+							doc.SetDirty(false)
+							u.app.CloseTab(tabIdx)
+							u.confirmClose.Open = false
+						}
 					}
 
 					saveBtn := ui.ButtonBase(c.Key("confirm-save")).Height(24).Padding(2, 12).Radius(4).Background(t.Accent)
@@ -346,14 +370,15 @@ func (u *UI) Render(c *ui.Context) {
 								DefaultPath: doc.Title + ".txt",
 							})
 							if err == nil && path != "" {
-								_ = u.app.SaveActiveFileAs(path)
-								u.app.CloseTab(tabIdx)
+								if u.saveConfirmedTab(tabIdx, path) == nil {
+									u.confirmClose.Open = false
+								}
 							}
 						} else {
-							_ = u.app.SaveActiveFile()
-							u.app.CloseTab(tabIdx)
+							if u.saveConfirmedTab(tabIdx, "") == nil {
+								u.confirmClose.Open = false
+							}
 						}
-						u.confirmClose.Open = false
 					}
 				})
 			})
@@ -366,11 +391,11 @@ func (u *UI) Render(c *ui.Context) {
 			ui.Column(c).Width(420).Background(t.Surface).Border(1, t.Border).Radius(8).Padding(20, 20).Gap(14).Children(func() {
 				ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 					ui.Box(c).Size(38, 38).Radius(6).Background(t.SurfaceHover).Center().Children(func() {
-						ui.Text(c, "G++").FontSize(15).FontWeight(700).TextColor(t.Accent)
+						ui.Image(c, aboutIcon).Size(32, 32)
 					})
 					ui.Column(c).Gap(2).Children(func() {
 						ui.Text(c, "Gopad++").FontSize(16).FontWeight(700).TextColor(t.Text)
-						ui.Text(c, "v0.1.0-alpha • High-Density Native Text Editor").FontSize(11).TextColor(t.TextMuted)
+						ui.Text(c, buildinfo.String()).FontSize(11).TextColor(t.TextMuted)
 					})
 				})
 
@@ -378,7 +403,7 @@ func (u *UI) Render(c *ui.Context) {
 
 				ui.Column(c).Gap(6).Children(func() {
 					renderAboutDetailRow(c, t, "Engine", "Pure Go & mygo/ui (Purego GPU OpenGL)")
-					renderAboutDetailRow(c, t, "Host", "Ubuntu 24.04.5 LTS (GNOME 46 Wayland)")
+					renderAboutDetailRow(c, t, "Host", runtime.GOOS+"/"+runtime.GOARCH)
 					renderAboutDetailRow(c, t, "Performance", "Zero WebView • Zero Electron • 120Hz Target")
 					renderAboutDetailRow(c, t, "License", "MIT Open Source")
 				})
@@ -770,4 +795,55 @@ func (u *UI) renderStatusBar(c *ui.Context, t *ui.Theme) {
 	ui.Row(c).FillWidth().Height(20).Background(t.Surface).Padding(1, 8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, statusText).FontSize(11).TextColor(t.TextMuted)
 	})
+}
+
+// saveConfirmedTab closes the requested document only after a successful save.
+func (u *UI) saveConfirmedTab(index int, path string) error {
+	if index < 0 || index >= len(u.app.Tabs) || u.app.Tabs[index] != u.confirmClose.Doc {
+		err := fmt.Errorf("document changed while confirmation was open; close it again")
+		u.confirmClose.Error = err.Error()
+		return err
+	}
+	u.app.SwitchTab(index)
+	var err error
+	if path == "" {
+		err = u.app.SaveActiveFile()
+	} else {
+		err = u.app.SaveActiveFileAs(path)
+	}
+	if err != nil {
+		u.confirmClose.Error = "Save failed: " + err.Error()
+		return err
+	}
+	u.confirmClose.Error = ""
+	u.app.CloseTab(index)
+	return nil
+}
+
+func (u *UI) openFileDialog() {
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Title: "Open File - Gopad++"})
+	if err == nil {
+		for _, path := range paths {
+			_ = u.app.OpenFile(path)
+		}
+	}
+}
+
+func (u *UI) saveFileDialog(saveAs bool) {
+	doc := u.app.ActiveDocument()
+	if doc == nil || doc.IsLoading() {
+		return
+	}
+	if saveAs || doc.Path == "" {
+		defaultPath := doc.Path
+		if defaultPath == "" {
+			defaultPath = doc.Title + ".txt"
+		}
+		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{Title: "Save As - Gopad++", DefaultPath: defaultPath})
+		if err == nil && path != "" {
+			_ = u.app.SaveActiveFileAs(path)
+		}
+	} else {
+		_ = u.app.SaveActiveFile()
+	}
 }

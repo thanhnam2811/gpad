@@ -1,0 +1,17 @@
+name: Feature request
+description: Describe an editing problem and a focused improvement.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What editing task is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include alternatives and how this fits a compact native Linux editor.
+    validations:
+      required: true

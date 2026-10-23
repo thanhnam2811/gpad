@@ -1,0 +1,33 @@
+name: Build release artifacts (no publication)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  artifacts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          check-latest: false
+      - run: python3 scripts/check-assets.py
+      - run: python3 scripts/test-release.py
+      - run: go mod verify && go build ./... && go test ./... && go test -race ./... && go vet ./...
+      - name: Build and verify amd64 archive
+        run: |
+          OUTPUT_DIR="$RUNNER_TEMP/first" scripts/release.sh
+          OUTPUT_DIR="$RUNNER_TEMP/second" scripts/release.sh
+          cmp "$RUNNER_TEMP/first/SHA256SUMS" "$RUNNER_TEMP/second/SHA256SUMS"
+          mkdir dist
+          cp "$RUNNER_TEMP/first/"* dist/
+          scripts/verify-release.sh dist/*.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gpad-linux-amd64-unreleased
+          path: dist/
+          if-no-files-found: error
