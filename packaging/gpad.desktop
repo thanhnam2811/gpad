@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Gopad++
+GenericName=Text Editor
+Comment=Compact native text editor
+Exec=gpad %F
+Icon=gpad
+Terminal=false
+Categories=Utility;TextEditor;
+MimeType=text/plain;
+StartupWMClass=gpad
